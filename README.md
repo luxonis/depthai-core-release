@@ -1,3 +1,26 @@
+## depthai (iron) - 2.28.0-1
+
+The packages in the `depthai` repository were released into the `iron` distro by running `/usr/bin/bloom-release depthai --rosdistro iron` on `Thu, 22 Aug 2024 06:37:36 -0000`
+
+The `depthai` package was released.
+
+Version of package(s) in repository `depthai`:
+
+- upstream repository: https://github.com/luxonis/depthai-core.git
+- release repository: https://github.com/luxonis/depthai-core-release.git
+- rosdistro version: `2.26.1-1`
+- old version: `2.26.1-1`
+- new version: `2.28.0-1`
+
+Versions of tools used:
+
+- bloom version: `0.12.0`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.24.0`
+- rosdistro version: `0.9.1`
+- vcstools version: `0.1.42`
+
+
 ## depthai (noetic) - 2.28.0-1
 
 The packages in the `depthai` repository were released into the `noetic` distro by running `/usr/bin/bloom-release depthai --rosdistro noetic` on `Thu, 22 Aug 2024 06:36:16 -0000`
