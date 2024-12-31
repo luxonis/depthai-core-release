@@ -437,6 +437,7 @@ struct RawCameraControl : public RawBuffer {
     uint16_t wbColorTemp;    // 1000 .. 12000
     uint8_t lowPowerNumFramesBurst;
     uint8_t lowPowerNumFramesDiscard;
+    std::vector<std::pair<std::string, std::string>> miscControls;
 
     void setCommand(Command cmd, bool value = true) {
         uint64_t mask = 1ull << (uint8_t)cmd;
@@ -493,7 +494,8 @@ struct RawCameraControl : public RawBuffer {
                       chromaDenoise,
                       wbColorTemp,
                       lowPowerNumFramesBurst,
-                      lowPowerNumFramesDiscard);
+                      lowPowerNumFramesDiscard,
+                      miscControls);
 };
 
 }  // namespace dai
