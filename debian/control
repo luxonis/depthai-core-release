@@ -1,0 +1,12 @@
+Source: ros-noetic-depthai
+Section: misc
+Priority: optional
+Maintainer: Adam Serafin <adam.serafin@luxonis.com>
+Build-Depends: debhelper (>= 9.0.0), cmake, libopencv-dev, libusb-1.0-0-dev, nlohmann-json3-dev, ros-noetic-ros-environment
+Homepage: https://www.luxonis.com/
+Standards-Version: 3.9.2
+
+Package: ros-noetic-depthai
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libopencv-dev, libusb-1.0-0-dev, nlohmann-json3-dev, ros-noetic-catkin
+Description: DepthAI core is a C++ library which comes with firmware and an API to interact with OAK Platform
