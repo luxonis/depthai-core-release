@@ -2,6 +2,64 @@
 Changelog for package depthai
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+3.0.0 (2025-07-31)
+------------------
+# DepthAI v3.0.0 release candidate is out :tada:
+We’re proud to announce a new major revision of the DepthAI library is now in release candidate stage and ready to be used.
+
+## Simplified API
+We've simplified and unified the API to lower the barrier to entry and make development more intuitive. Core tasks like setting up camera streams, running neural networks, and building spatial pipelines are now streamlined with fewer lines of code.
+
+We have removed many deprecated functions and simplified node constructors, creating a cleaner, more consistent, and easier-to-use library for newcomers as well as more experienced users.
+
+## Refreshed nodes
+We've revisited some of the most fundamental nodes to make them more powerful and flexible.
+
+*   **Camera**
+    *   The `ColorCamera` and `MonoCamera` nodes have been replaced by a single, generic `Camera` node that works across all platforms.
+    *   It supports a variable number of outputs, where each can have an independent:
+        * Type (NV12, RGB interleaved or planar, ...)
+        * Size
+        * FPS
+    * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/Camera) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/Camera) examples.
+
+*   **ImageManip**
+    *   The `ImageManip` node has been revised for more robust and predictable behavior (we now track the order of operations to make the output fully deterministic).
+    *   It now supports relative crops and can be used as a host-side node in addition to running on RVC2 and RVC4 devices.
+    *   [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/ImageManip/) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/ImageManip/) examples.
+
+## New nodes
+DepthAI v3 introduces new high-level nodes to simplify working with high level concepts (RGBD pointclouds, SLAM)
+
+*   **RGBD**: This node makes it easy to work with synchronized and aligned color and depth data. It features an "autocreate" mode that automatically constructs the required input pipeline, delivering a ready-to-use RGBD message or a colored point cloud.
+     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RGBD) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RGBD) examples. 
+*   **VSLAM**: We've added SLAM and VIO as host nodes, enabling advanced spatial AI applications. These are currently available on Linux and macOS and are in early preview.
+     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RVC2/VSLAM) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RVC2/VSLAM) examples.
+
+## Support for host nodes
+DepthAI v3 now supports custom host nodes, allowing you to run parts of your pipeline on the host with custom logic while keeping the rest on-device. Whether you need to run complex post-processing in Python or integrate with external libraries, it’s all part of the same unified pipeline. See the [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/HostNodes) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/HostNodes) examples.
+
+## Visualizer
+Debugging and development just got easier with our new integrated visualizer. You can now visualize camera streams, neural network outputs, and detection overlays in real-time. The visualizer is also able to display the pipeline graph, making it a great tool for understanding and debugging your application's data flow.
+See the [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/Visualizer) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/Visualizer) examples.
+
+## A lot of nice to have features:
+*   **Auto reconnect**: If a device has a flaky connection and crashes, the library will now automatically try to reconnect instead of exiting, making your applications more resilient.
+*   **Unified Coordinate System**: We’ve standardized all coordinate systems. Camera, IMU, and spatial data now use the RDF (Right-Down-Forward) convention, eliminating inconsistencies when fusing data from multiple sensors.
+*   **Native Model Zoo Support**: Take advantage of the new Luxonis Model Zoo, which integrates natively into v3. Loading and deploying models is now seamless, with no boilerplate required.
+* **Remapping points between different frames**: We've much improved the developer experience where detections from one image in the pipeline (on the input of the NN for example) need to be remapped to another image in the pipeline, that's still in full resolution by internally tracking all of the image operations that are made to streams. See [Python](https://github.com/luxonis/depthai-core/blob/main/examples/python/ImageManip/image_manip_remap.py) and [C++](https://github.com/luxonis/depthai-core/blob/main/examples/cpp/ImageManip/image_manip_remap.cpp) examples.
+
+## Support for RVC4 devices
+DepthAI v3 brings support for both RVC2 and RVC4 devices, with a unified codebase that runs on both platforms. This allows you to prototype on one and deploy on another without code changes in most cases.
+
+## Migration from v2.x version of the library
+We've prepared a porting guide to speed up the migration [here](https://github.com/luxonis/depthai-core/blob/main/V2V3PortinGuide.md).
+
+## Known issues
+*   On release flavors of the Luxonis OS on RVC4, the camera stack can get stuck in a bad state where cameras do not restart streaming, requiring a device reboot. It is recommended to use `-debug` versions of the OS until this is resolved.
+
+
+
 2.30.0 (2025-03-18)
 -------------------
 * Features
