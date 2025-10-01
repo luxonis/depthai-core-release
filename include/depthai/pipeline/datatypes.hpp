@@ -15,6 +15,7 @@
 #include "datatype/ImageManipConfig.hpp"
 #include "datatype/ImgDetections.hpp"
 #include "datatype/ImgFrame.hpp"
+#include "datatype/MapData.hpp"
 #include "datatype/MessageGroup.hpp"
 #include "datatype/NNData.hpp"
 #include "datatype/PointCloudConfig.hpp"
@@ -31,3 +32,7 @@
 #include "datatype/TrackedFeatures.hpp"
 #include "datatype/Tracklets.hpp"
 #include "datatype/TransformData.hpp"
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+    #include "datatype/DynamicCalibrationControl.hpp"
+    #include "datatype/DynamicCalibrationResults.hpp"
+#endif
