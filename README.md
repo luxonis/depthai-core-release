@@ -1,3 +1,26 @@
+## depthai (kilted) - 3.0.7-1
+
+The packages in the `depthai` repository were released into the `kilted` distro by running `/usr/bin/bloom-release depthai --rosdistro kilted` on `Tue, 07 Oct 2025 12:51:04 -0000`
+
+The `depthai` package was released.
+
+Version of package(s) in repository `depthai`:
+
+- upstream repository: https://github.com/luxonis/depthai-core.git
+- release repository: https://github.com/luxonis/depthai-core-release.git
+- rosdistro version: `3.0.6-1`
+- old version: `3.0.6-1`
+- new version: `3.0.7-1`
+
+Versions of tools used:
+
+- bloom version: `0.12.0`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.25.1`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## depthai (kilted) - 3.0.6-1
 
 The packages in the `depthai` repository were released into the `kilted` distro by running `/usr/bin/bloom-release depthai --rosdistro kilted` on `Wed, 01 Oct 2025 07:23:58 -0000`
