@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "depthai-shared/datatype/RawObjectTrackerConfig.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
 
 namespace dai {
@@ -11,36 +12,36 @@ namespace dai {
  * ObjectTrackerConfig message. Carries ROI (region of interest) and threshold for depth calculation
  */
 class ObjectTrackerConfig : public Buffer {
+    std::shared_ptr<RawBuffer> serialize() const override;
+    RawObjectTrackerConfig& cfg;
+
    public:
     /**
      * Construct ObjectTrackerConfig message.
      */
-    ObjectTrackerConfig() = default;
-    virtual ~ObjectTrackerConfig();
+    ObjectTrackerConfig();
+    explicit ObjectTrackerConfig(std::shared_ptr<RawObjectTrackerConfig> ptr);
+    virtual ~ObjectTrackerConfig() = default;
 
     /**
-     * Tracklet IDs to remove from tracking.
-     * Tracklet will transition to REMOVED state.
+     * Set explicit configuration.
+     * @param config Explicit configuration
      */
-    std::vector<int32_t> trackletIdsToRemove;
+    ObjectTrackerConfig& set(dai::RawObjectTrackerConfig config);
 
     /**
-     * Force remove a tracklet with specified ID.
+     * Retrieve configuration data for SpatialLocationCalculator.
+     * @returns config for SpatialLocationCalculator
+     */
+    dai::RawObjectTrackerConfig get() const;
+
+    /**
      */
     ObjectTrackerConfig& forceRemoveID(int32_t id);
 
     /**
-     * Force remove tracklets with specified IDs.
      */
     ObjectTrackerConfig& forceRemoveIDs(std::vector<int32_t> ids);
-
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
-
-    DatatypeEnum getDatatype() const override {
-        return DatatypeEnum::ObjectTrackerConfig;
-    }
-
-    DEPTHAI_SERIALIZE(ObjectTrackerConfig, Buffer::sequenceNum, Buffer::ts, Buffer::tsDevice, trackletIdsToRemove);
 };
 
 }  // namespace dai

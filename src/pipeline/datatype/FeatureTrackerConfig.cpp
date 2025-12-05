@@ -2,64 +2,74 @@
 
 namespace dai {
 
-FeatureTrackerConfig::~FeatureTrackerConfig() = default;
-
-void FeatureTrackerConfig::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
-    metadata = utility::serialize(*this);
-    datatype = DatatypeEnum::FeatureTrackerConfig;
+std::shared_ptr<RawBuffer> FeatureTrackerConfig::serialize() const {
+    return raw;
 }
 
-FeatureTrackerConfig& FeatureTrackerConfig::setCornerDetector(FeatureTrackerConfig::CornerDetector::Type cornerDetector) {
-    this->cornerDetector.type = cornerDetector;
+FeatureTrackerConfig::FeatureTrackerConfig() : Buffer(std::make_shared<RawFeatureTrackerConfig>()), cfg(*dynamic_cast<RawFeatureTrackerConfig*>(raw.get())) {}
+FeatureTrackerConfig::FeatureTrackerConfig(std::shared_ptr<RawFeatureTrackerConfig> ptr)
+    : Buffer(std::move(ptr)), cfg(*dynamic_cast<RawFeatureTrackerConfig*>(raw.get())) {}
+
+dai::RawFeatureTrackerConfig FeatureTrackerConfig::get() const {
+    return cfg;
+}
+
+FeatureTrackerConfig& FeatureTrackerConfig::setCornerDetector(dai::FeatureTrackerConfig::CornerDetector::Type cornerDetector) {
+    cfg.cornerDetector.type = cornerDetector;
     return *this;
 }
 
-FeatureTrackerConfig& FeatureTrackerConfig::setCornerDetector(FeatureTrackerConfig::CornerDetector config) {
-    cornerDetector = config;
+FeatureTrackerConfig& FeatureTrackerConfig::setCornerDetector(dai::FeatureTrackerConfig::CornerDetector config) {
+    cfg.cornerDetector = config;
     return *this;
 }
 
 FeatureTrackerConfig& FeatureTrackerConfig::setMotionEstimator(bool enable) {
-    motionEstimator.enable = enable;
+    cfg.motionEstimator.enable = enable;
     return *this;
 }
 
-FeatureTrackerConfig& FeatureTrackerConfig::setMotionEstimator(FeatureTrackerConfig::MotionEstimator config) {
-    motionEstimator = config;
+FeatureTrackerConfig& FeatureTrackerConfig::setMotionEstimator(dai::FeatureTrackerConfig::MotionEstimator config) {
+    cfg.motionEstimator = config;
     return *this;
 }
 
 FeatureTrackerConfig& FeatureTrackerConfig::setOpticalFlow() {
-    motionEstimator.type = dai::FeatureTrackerConfig::MotionEstimator::Type::LUCAS_KANADE_OPTICAL_FLOW;
+    cfg.motionEstimator.type = dai::FeatureTrackerConfig::MotionEstimator::Type::LUCAS_KANADE_OPTICAL_FLOW;
     setMotionEstimator(true);
     return *this;
 }
 
-FeatureTrackerConfig& FeatureTrackerConfig::setOpticalFlow(FeatureTrackerConfig::MotionEstimator::OpticalFlow config) {
-    motionEstimator.type = FeatureTrackerConfig::MotionEstimator::Type::LUCAS_KANADE_OPTICAL_FLOW;
-    motionEstimator.opticalFlow = config;
+FeatureTrackerConfig& FeatureTrackerConfig::setOpticalFlow(dai::FeatureTrackerConfig::MotionEstimator::OpticalFlow config) {
+    cfg.motionEstimator.type = dai::FeatureTrackerConfig::MotionEstimator::Type::LUCAS_KANADE_OPTICAL_FLOW;
+    cfg.motionEstimator.opticalFlow = config;
     setMotionEstimator(true);
     return *this;
 }
 
 FeatureTrackerConfig& FeatureTrackerConfig::setHwMotionEstimation() {
-    motionEstimator.type = FeatureTrackerConfig::MotionEstimator::Type::HW_MOTION_ESTIMATION;
+    cfg.motionEstimator.type = dai::FeatureTrackerConfig::MotionEstimator::Type::HW_MOTION_ESTIMATION;
     setMotionEstimator(true);
     return *this;
 }
 
 FeatureTrackerConfig& FeatureTrackerConfig::setFeatureMaintainer(bool enable) {
-    featureMaintainer.enable = enable;
+    cfg.featureMaintainer.enable = enable;
     return *this;
 }
 
-FeatureTrackerConfig& FeatureTrackerConfig::setFeatureMaintainer(FeatureTrackerConfig::FeatureMaintainer config) {
-    featureMaintainer = config;
+FeatureTrackerConfig& FeatureTrackerConfig::setFeatureMaintainer(dai::FeatureTrackerConfig::FeatureMaintainer config) {
+    cfg.featureMaintainer = config;
+    return *this;
+}
+
+FeatureTrackerConfig& FeatureTrackerConfig::set(dai::RawFeatureTrackerConfig config) {
+    cfg = config;
     return *this;
 }
 
 FeatureTrackerConfig& FeatureTrackerConfig::setNumTargetFeatures(std::int32_t numTargetFeatures) {
-    cornerDetector.numTargetFeatures = numTargetFeatures;
+    cfg.cornerDetector.numTargetFeatures = numTargetFeatures;
     return *this;
 }
 

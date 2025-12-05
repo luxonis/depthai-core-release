@@ -1,12 +1,12 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
 #include <depthai/pipeline/datatype/CameraControl.hpp>
 
 #include "depthai/common/CameraBoardSocket.hpp"
+#include "depthai/pipeline/Node.hpp"
 
 // shared
-#include <depthai/properties/MonoCameraProperties.hpp>
+#include <depthai-shared/properties/MonoCameraProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -14,21 +14,19 @@ namespace node {
 /**
  * @brief MonoCamera node. For use with grayscale sensors.
  */
-class [[deprecated("Use Camera node instead")]] MonoCamera : public DeviceNodeCRTP<DeviceNode, MonoCamera, MonoCameraProperties>, public SourceNode {
+class MonoCamera : public NodeCRTP<Node, MonoCamera, MonoCameraProperties> {
    public:
     constexpr static const char* NAME = "MonoCamera";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+   private:
+    std::shared_ptr<RawCameraControl> rawControl;
 
    protected:
-    Properties& getProperties() override;
-    bool isSourceNode() const override;
-    NodeRecordParams getNodeRecordParams() const override;
-    Output& getRecordOutput() override;
-    Input& getReplayInput() override;
+    Properties& getProperties();
 
    public:
-    MonoCamera() = default;
-    MonoCamera(std::unique_ptr<Properties> props);
+    MonoCamera(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    MonoCamera(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
      * Initial control options to apply to sensor
@@ -39,31 +37,21 @@ class [[deprecated("Use Camera node instead")]] MonoCamera : public DeviceNodeCR
      * Input for CameraControl message, which can modify camera parameters in runtime
      * Default queue is blocking with size 8
      */
-    // Input inputControl{*this, "inputControl", Input::Type::SReceiver, true, 8, {{DatatypeEnum::CameraControl, false}}};
-    Input inputControl{
-        *this, {"inputControl", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::CameraControl, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
-
-    /**
-     * Input for mocking 'isp' functionality.
-     * Default queue is blocking with size 8
-     */
-    Input mockIsp{*this, {"mockIsp", DEFAULT_GROUP, true, 8, {{{DatatypeEnum::ImgFrame, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input inputControl{*this, "inputControl", Input::Type::SReceiver, true, 8, {{DatatypeEnum::CameraControl, false}}};
 
     /**
      * Outputs ImgFrame message that carries RAW8 encoded (grayscale) frame data.
      *
      * Suitable for use StereoDepth node. Processed by ISP
      */
-    // Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
 
     /**
      * Outputs ImgFrame message that carries RAW10-packed (MIPI CSI-2 format) frame data.
      *
      * Captured directly from the camera sensor
      */
-    // Output raw{*this, "raw", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
-    Output raw{*this, {"raw", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+    Output raw{*this, "raw", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
 
     /**
      * Outputs metadata-only ImgFrame message as an early indicator of an incoming frame.
@@ -73,8 +61,7 @@ class [[deprecated("Use Camera node instead")]] MonoCamera : public DeviceNodeCR
      * Could be used to synchronize various processes with camera capture.
      * Fields populated: camera id, sequence number, timestamp
      */
-    // Output frameEvent{*this, "frameEvent", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
-    Output frameEvent{*this, {"frameEvent", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+    Output frameEvent{*this, "frameEvent", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
 
     /**
      * Specify which board socket to use
@@ -112,8 +99,6 @@ class [[deprecated("Use Camera node instead")]] MonoCamera : public DeviceNodeCR
     /// Get camera image orientation
     CameraImageOrientation getImageOrientation() const;
 
-    void setMockIspSize(int width, int height);
-
     /// Set sensor resolution
     void setResolution(Properties::SensorResolution resolution);
 
@@ -140,7 +125,7 @@ class [[deprecated("Use Camera node instead")]] MonoCamera : public DeviceNodeCR
      * but 3A fps is set to 15, the camera control messages will be processed at 15 fps rate, which will lead to queueing.
 
      */
-    void setIsp3aFps(int isp3aFps);
+    [[deprecated("setIsp3aFps is unstable")]] void setIsp3aFps(int isp3aFps);
 
     /**
      * Get rate at which camera should produce frames

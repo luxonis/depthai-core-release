@@ -4,78 +4,45 @@
 #include <unordered_map>
 #include <vector>
 
-#include "depthai/common/ImgTransformations.hpp"
-#include "depthai/common/Point3f.hpp"
-#include "depthai/common/optional.hpp"
+#include "depthai-shared/datatype/RawSpatialImgDetections.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
-#include "depthai/pipeline/datatype/ImgDetections.hpp"
-#include "depthai/pipeline/datatype/SpatialLocationCalculatorConfig.hpp"
-#include "depthai/utility/ProtoSerializable.hpp"
-#include "depthai/utility/Serialization.hpp"
 
 namespace dai {
 
 /**
- * SpatialImgDetection structure
- *
- * Contains image detection results together with spatial location data.
- */
-struct SpatialImgDetection : public ImgDetection {
-    Point3f spatialCoordinates;
-    SpatialLocationCalculatorConfigData boundingBoxMapping;
-
-    DEPTHAI_SERIALIZE(SpatialImgDetection,
-                      ImgDetection::xmax,
-                      ImgDetection::xmin,
-                      ImgDetection::ymax,
-                      ImgDetection::ymin,
-                      ImgDetection::label,
-                      ImgDetection::labelName,
-                      ImgDetection::confidence,
-                      ImgDetection::boundingBox,
-                      ImgDetection::keypoints,
-                      spatialCoordinates,
-                      boundingBoxMapping);
-};
-/**
  * SpatialImgDetections message. Carries detection results together with spatial location data
  */
-class SpatialImgDetections : public Buffer, public ProtoSerializable {
+class SpatialImgDetections : public Buffer {
+    std::shared_ptr<RawBuffer> serialize() const override;
+    RawSpatialImgDetections& dets;
+
    public:
     /**
      * Construct SpatialImgDetections message.
      */
-    SpatialImgDetections() = default;
-    virtual ~SpatialImgDetections();
+    SpatialImgDetections();
+    explicit SpatialImgDetections(std::shared_ptr<RawSpatialImgDetections> ptr);
+    virtual ~SpatialImgDetections() = default;
 
     /**
      * Detection results.
      */
-    std::vector<SpatialImgDetection> detections;
-    std::optional<ImgTransformation> transformation;
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
-
-    DatatypeEnum getDatatype() const override {
-        return DatatypeEnum::SpatialImgDetections;
-    }
-
-#ifdef DEPTHAI_ENABLE_PROTOBUF
-    /**
-     * Serialize message to proto buffer
-     *
-     * @returns serialized message
-     */
-    std::vector<std::uint8_t> serializeProto(bool = false) const override;
+    std::vector<SpatialImgDetection>& detections;
 
     /**
-     * Serialize schema to proto buffer
-     *
-     * @returns serialized schema
+     * Sets image timestamp related to dai::Clock::now()
      */
-    ProtoSerializable::SchemaPair serializeSchema() const override;
-#endif
+    SpatialImgDetections& setTimestamp(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> timestamp);
 
-    DEPTHAI_SERIALIZE(SpatialImgDetections, Buffer::sequenceNum, Buffer::ts, Buffer::tsDevice, detections, transformation);
+    /**
+     * Sets image timestamp related to dai::Clock::now()
+     */
+    SpatialImgDetections& setTimestampDevice(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> timestamp);
+
+    /**
+     * Retrieves image sequence number
+     */
+    SpatialImgDetections& setSequenceNum(int64_t sequenceNum);
 };
 
 }  // namespace dai

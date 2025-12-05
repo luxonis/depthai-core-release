@@ -1,9 +1,9 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include "depthai/pipeline/Node.hpp"
 
 // shared
-#include <depthai/properties/IMUProperties.hpp>
+#include <depthai-shared/properties/IMUProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -11,26 +11,20 @@ namespace node {
 /**
  * @brief IMU node for BNO08X.
  */
-class IMU : public DeviceNodeCRTP<DeviceNode, IMU, IMUProperties>, public SourceNode {
-   protected:
-    bool isSourceNode() const override;
-    NodeRecordParams getNodeRecordParams() const override;
-    Output& getRecordOutput() override;
-    Input& getReplayInput() override;
-
+class IMU : public NodeCRTP<Node, IMU, IMUProperties> {
    public:
     constexpr static const char* NAME = "IMU";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+    /**
+     * Constructs IMU node.
+     */
+    IMU(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    IMU(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
      * Outputs IMUData message that carries IMU packets.
      */
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::IMUData, false}}}}};
-
-    /**
-     * Mock IMU data for replaying recorded data
-     */
-    Input mockIn{*this, {"mockIn", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::IMUData, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::IMUData, false}}};
 
     /**
      * Enable a new IMU sensor with explicit configuration

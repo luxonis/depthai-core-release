@@ -1,25 +1,27 @@
 #pragma once
 
-#include "depthai/pipeline/DeviceNode.hpp"
-#include "depthai/properties/MessageDemuxProperties.hpp"
+#include "depthai-shared/properties/MessageDemuxProperties.hpp"
+#include "depthai/pipeline/Node.hpp"
 
 namespace dai {
 namespace node {
 
-class MessageDemux : public DeviceNodeCRTP<DeviceNode, MessageDemux, MessageDemuxProperties> {
+class MessageDemux : public NodeCRTP<Node, MessageDemux, MessageDemuxProperties> {
    public:
     constexpr static const char* NAME = "MessageDemux";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
-    ~MessageDemux() override;
+    MessageDemux(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+
+    MessageDemux(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+
     /**
      * Input message of type MessageGroup
      */
-    Input input{*this, {"input", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::MessageGroup, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input input{*this, "input", Input::Type::SReceiver, {{DatatypeEnum::MessageGroup, false}}};
 
     /**
      * A map of outputs, where keys are same as in the input MessageGroup
      */
-    OutputMap outputs{*this, "outputs", {DEFAULT_NAME, DEFAULT_GROUP, {{{DatatypeEnum::Buffer, true}}}}};
+    OutputMap outputs;
 };
 
 }  // namespace node

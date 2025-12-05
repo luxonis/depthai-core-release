@@ -1,103 +1,74 @@
 #include <depthai/device/Version.hpp>
-#include <semver.hpp>
+
+// std
+#include <cstdio>
+#include <cstdlib>
+#include <stdexcept>
 
 namespace dai {
 
-semver::prerelease convertPreReleaseToSemver(Version::PreReleaseType type) {
-    switch(type) {
-        case Version::PreReleaseType::ALPHA:
-            return semver::prerelease::alpha;
-        case Version::PreReleaseType::BETA:
-            return semver::prerelease::beta;
-        case Version::PreReleaseType::RC:
-            return semver::prerelease::rc;
-        case Version::PreReleaseType::NONE:
-            return semver::prerelease::none;
-        default:
-            throw std::invalid_argument("Invalid pre-release type");
+Version::Version(const std::string& v) : versionMajor(0), versionMinor(0), versionPatch(0), buildInfo{""} {
+    // Parse string
+    char buffer[256]{0};
+    if(std::sscanf(v.c_str(), "%u.%u.%u+%255s", &versionMajor, &versionMinor, &versionPatch, buffer) != 4) {
+        if(std::sscanf(v.c_str(), "%u.%u.%u", &versionMajor, &versionMinor, &versionPatch) != 3) {
+            throw std::runtime_error("Cannot parse version: " + v);
+        }
+    } else {
+        buildInfo = std::string{buffer};
     }
 }
 
-class Version::Impl {
-   public:
-    explicit Impl(const std::string& v) {
-        auto posBuild = v.find('+');
+Version::Version(unsigned vmajor, unsigned vminor, unsigned vpatch) : versionMajor(vmajor), versionMinor(vminor), versionPatch(vpatch), buildInfo{""} {}
 
-        if(posBuild != std::string::npos) {
-            buildInfo = v.substr(posBuild + 1);
-        }
-
-        auto semverStr = v.substr(0, posBuild);
-
-        if(semverStr.empty() || !semver::valid(semverStr)) {
-            throw std::invalid_argument("Invalid version string");
-        }
-
-        version = semver::version(semverStr);
-    }
-
-    Impl(unsigned major,
-         unsigned minor,
-         unsigned patch,
-         const PreReleaseType& type,
-         const std::optional<uint16_t>& preReleaseVersion,
-         const std::string& buildInfo)
-        : version(major, minor, patch, convertPreReleaseToSemver(type), preReleaseVersion), buildInfo(buildInfo) {}
-
-    bool operator==(const Impl& other) const {
-        return version == other.version;
-    }
-
-    bool operator<(const Impl& other) const {
-        return version < other.version;
-    }
-
-    std::string toString() const {
-        std::string result = version.to_string();
-        if(!buildInfo.empty()) {
-            result += "+" + buildInfo;
-        }
-        return result;
-    }
-
-    std::string toStringSemver() const {
-        return version.to_string();
-    }
-
-    std::string getBuildInfo() const {
-        return buildInfo;
-    }
-
-   private:
-    semver::version version;
-    std::string buildInfo;
-};
-
-// Definitions of Version member functions
-Version::Version(const std::string& v) : pimpl(spimpl::make_impl<Impl>(v)) {}
-
-Version::Version(
-    unsigned major, unsigned minor, unsigned patch, const PreReleaseType& type, const std::optional<uint16_t>& preReleaseVersion, const std::string& buildInfo)
-    : pimpl(spimpl::make_impl<Impl>(major, minor, patch, type, preReleaseVersion, buildInfo)) {}
+Version::Version(unsigned vmajor, unsigned vminor, unsigned vpatch, std::string buildInfo)
+    : versionMajor(vmajor), versionMinor(vminor), versionPatch(vpatch), buildInfo(buildInfo) {}
 
 bool Version::operator==(const Version& other) const {
-    return *pimpl == *other.pimpl;
+    if(versionMajor == other.versionMajor && versionMinor == other.versionMinor && versionPatch == other.versionPatch && buildInfo == other.buildInfo) {
+        return true;
+    }
+    return false;
 }
 
 bool Version::operator<(const Version& other) const {
-    return *pimpl < *other.pimpl;
+    if(versionMajor < other.versionMajor) {
+        return true;
+    } else if(versionMajor == other.versionMajor) {
+        if(versionMinor < other.versionMinor) {
+            return true;
+        } else if(versionMinor == other.versionMinor) {
+            if(versionPatch < other.versionPatch) {
+                return true;
+            } else if(versionPatch == other.versionPatch) {
+                if(!buildInfo.empty() && other.buildInfo.empty()) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 std::string Version::toString() const {
-    return pimpl->toString();
+    std::string version = std::to_string(versionMajor) + "." + std::to_string(versionMinor) + "." + std::to_string(versionPatch);
+    if(!buildInfo.empty()) {
+        version += "+" + buildInfo;
+    }
+    return version;
 }
 
 std::string Version::toStringSemver() const {
-    return pimpl->toStringSemver();
+    std::string version = std::to_string(versionMajor) + "." + std::to_string(versionMinor) + "." + std::to_string(versionPatch);
+    return version;
 }
 
 std::string Version::getBuildInfo() const {
-    return pimpl->getBuildInfo();
+    return buildInfo;
+}
+
+Version Version::getSemver() const {
+    return Version(versionMajor, versionMinor, versionPatch);
 }
 
 }  // namespace dai

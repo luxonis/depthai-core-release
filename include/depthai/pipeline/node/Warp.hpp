@@ -1,11 +1,11 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 // #include <depthai/pipeline/datatype/WarpConfig.hpp>
 
 // shared
-#include <depthai/common/Point2f.hpp>
-#include <depthai/properties/WarpProperties.hpp>
+#include <depthai-shared/common/Point2f.hpp>
+#include <depthai-shared/properties/WarpProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -13,25 +13,41 @@ namespace node {
 /**
  * @brief Warp node. Capability to crop, resize, warp, ... incoming image frames
  */
-class Warp : public DeviceNodeCRTP<DeviceNode, Warp, WarpProperties> {
+class Warp : public NodeCRTP<Node, Warp, WarpProperties> {
    public:
     constexpr static const char* NAME = "Warp";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+   protected:
+    Properties& getProperties();
 
    private:
     void setWarpMesh(const float* meshData, int numMeshPoints, int width, int height);
 
    public:
+    Warp(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    Warp(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+
+    // /**
+    //  * Initial config to use when manipulating frames
+    //  */
+    // WarpConfig initialConfig;
+
+    // /**
+    //  * Input WarpConfig message with ability to modify parameters in runtime
+    //  * Default queue is blocking with size 8
+    //  */
+    // Input inputConfig{*this, "inputConfig", Input::Type::SReceiver, true, 8, {{DatatypeEnum::WarpConfig, true}}};
+
     /**
      * Input image to be modified
      * Default queue is blocking with size 8
      */
-    Input inputImage{*this, {"inputImage", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::ImgFrame, true}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input inputImage{*this, "inputImage", Input::Type::SReceiver, true, 8, true, {{DatatypeEnum::ImgFrame, true}}};
 
     /**
      * Outputs ImgFrame message that carries warped image.
      */
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, true}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
 
     /**
      * Sets output frame size in pixels

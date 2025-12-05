@@ -1,111 +1,82 @@
 #include "depthai/pipeline/datatype/PointCloudData.hpp"
 
-#include "depthai/common/Point3f.hpp"
-#ifdef DEPTHAI_ENABLE_PROTOBUF
-    #include "depthai/schemas/PointCloudData.pb.h"
-    #include "utility/ProtoSerialize.hpp"
-#endif
+#include <iostream>
+
 namespace dai {
 
-PointCloudData::~PointCloudData() = default;
-
-void PointCloudData::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
-    metadata = utility::serialize(*this);
-    datatype = DatatypeEnum::PointCloudData;
+std::shared_ptr<RawBuffer> PointCloudData::serialize() const {
+    return raw;
 }
 
-std::vector<Point3f> PointCloudData::getPoints() {
-    if(isColor()) {
-        span<const Point3fRGBA> pointData(reinterpret_cast<Point3fRGBA*>(data->getData().data()), data->getData().size() / sizeof(Point3fRGBA));
-        std::vector<Point3fRGBA> points(pointData.begin(), pointData.end());
-        std::vector<Point3f> points3f;
-        for(const auto& p : points) {
-            points3f.push_back({p.x, p.y, p.z});
-        }
-        return points3f;
+PointCloudData::PointCloudData() : Buffer(std::make_shared<RawPointCloudData>()), pcl(*dynamic_cast<RawPointCloudData*>(raw.get())) {
+    // set timestamp to now
+    setTimestamp(std::chrono::steady_clock::now());
+}
+PointCloudData::PointCloudData(std::shared_ptr<RawPointCloudData> ptr) : Buffer(std::move(ptr)), pcl(*dynamic_cast<RawPointCloudData*>(raw.get())) {}
+
+std::vector<Point3f>& PointCloudData::getPoints() {
+    if(points.empty() && !pcl.data.empty()) {
+        auto* dataPtr = (Point3f*)pcl.data.data();
+        points.insert(points.end(), dataPtr, dataPtr + pcl.data.size() / sizeof(Point3f));
+        assert(isSparse() || points.size() == pcl.width * pcl.height);
+        assert(!isSparse() || points.size() <= pcl.width * pcl.height);
     }
-    span<const Point3f> pointData(reinterpret_cast<Point3f*>(data->getData().data()), data->getData().size() / sizeof(Point3f));
-    std::vector<Point3f> points(pointData.begin(), pointData.end());
-    assert(isSparse() || points.size() == width * height);
-    assert(!isSparse() || points.size() <= width * height);
-
     return points;
-}
-
-std::vector<Point3fRGBA> PointCloudData::getPointsRGB() {
-    if(!isColor()) {
-        throw std::runtime_error("PointCloudData does not contain color data");
-    }
-    span<const Point3fRGBA> pointData(reinterpret_cast<Point3fRGBA*>(data->getData().data()), data->getData().size() / sizeof(Point3fRGBA));
-    std::vector<Point3fRGBA> points(pointData.begin(), pointData.end());
-    assert(isSparse() || points.size() == width * height);
-    assert(!isSparse() || points.size() <= width * height);
-
-    return points;
-}
-
-void PointCloudData::setPoints(const std::vector<Point3f>& points) {
-    auto size = points.size();
-    std::vector<uint8_t> data(size * sizeof(Point3f));
-    std::memcpy(data.data(), points.data(), size * sizeof(Point3f));
-    setData(std::move(data));
-    setColor(false);
-}
-
-void PointCloudData::setPointsRGB(const std::vector<Point3fRGBA>& points) {
-    auto size = points.size();
-    std::vector<uint8_t> data(size * sizeof(Point3fRGBA));
-    std::memcpy(data.data(), points.data(), size * sizeof(Point3fRGBA));
-    setData(std::move(data));
-    setColor(true);
 }
 
 unsigned int PointCloudData::getInstanceNum() const {
-    return instanceNum;
+    return pcl.instanceNum;
 }
 unsigned int PointCloudData::getWidth() const {
-    return width;
+    return pcl.width;
 }
 unsigned int PointCloudData::getHeight() const {
-    return height;
+    return pcl.height;
 }
 float PointCloudData::getMinX() const {
-    return minx;
+    return pcl.minx;
 }
 float PointCloudData::getMinY() const {
-    return miny;
+    return pcl.miny;
 }
 float PointCloudData::getMinZ() const {
-    return minz;
+    return pcl.minz;
 }
 float PointCloudData::getMaxX() const {
-    return maxx;
+    return pcl.maxx;
 }
 float PointCloudData::getMaxY() const {
-    return maxy;
+    return pcl.maxy;
 }
 float PointCloudData::getMaxZ() const {
-    return maxz;
+    return pcl.maxz;
 }
 bool PointCloudData::isSparse() const {
-    return sparse;
+    return pcl.sparse;
 }
 
-bool PointCloudData::isColor() const {
-    return color;
+// setters
+PointCloudData& PointCloudData::setTimestamp(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> tp) {
+    // Set timestamp from timepoint
+    return static_cast<PointCloudData&>(Buffer::setTimestamp(tp));
 }
-
+PointCloudData& PointCloudData::setTimestampDevice(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> tp) {
+    // Set timestamp from timepoint
+    return static_cast<PointCloudData&>(Buffer::setTimestampDevice(tp));
+}
 PointCloudData& PointCloudData::setInstanceNum(unsigned int instanceNum) {
-    this->instanceNum = instanceNum;
+    pcl.instanceNum = instanceNum;
     return *this;
 }
-
+PointCloudData& PointCloudData::setSequenceNum(int64_t sequenceNum) {
+    return static_cast<PointCloudData&>(Buffer::setSequenceNum(sequenceNum));
+}
 PointCloudData& PointCloudData::setWidth(unsigned int width) {
-    this->width = width;
+    pcl.width = width;
     return *this;
 }
 PointCloudData& PointCloudData::setHeight(unsigned int height) {
-    this->height = height;
+    pcl.height = height;
     return *this;
 }
 PointCloudData& PointCloudData::setSize(unsigned int width, unsigned int height) {
@@ -118,49 +89,30 @@ PointCloudData& PointCloudData::setSize(std::tuple<unsigned int, unsigned int> s
     return *this;
 }
 PointCloudData& PointCloudData::setMinX(float val) {
-    this->minx = val;
+    pcl.minx = val;
     return *this;
 }
 PointCloudData& PointCloudData::setMinY(float val) {
-    this->miny = val;
+    pcl.miny = val;
     return *this;
 }
 PointCloudData& PointCloudData::setMinZ(float val) {
-    this->minz = val;
+    pcl.minz = val;
     return *this;
 }
 PointCloudData& PointCloudData::setMaxX(float val) {
-    this->maxx = val;
+    pcl.maxx = val;
     return *this;
 }
 PointCloudData& PointCloudData::setMaxY(float val) {
-    this->maxy = val;
+    pcl.maxy = val;
     return *this;
 }
 PointCloudData& PointCloudData::setMaxZ(float val) {
-    this->maxz = val;
-    return *this;
-}
-PointCloudData& PointCloudData::setSparse(bool val) {
-    sparse = val;
+    pcl.maxz = val;
     return *this;
 }
 
-PointCloudData& PointCloudData::setColor(bool val) {
-    color = val;
-    return *this;
-}
-
-#ifdef DEPTHAI_ENABLE_PROTOBUF
-std::vector<std::uint8_t> PointCloudData::serializeProto(bool metadataOnly) const {
-    return utility::serializeProto(utility::getProtoMessage(this, metadataOnly));
-}
-
-ProtoSerializable::SchemaPair PointCloudData::serializeSchema() const {
-    return utility::serializeSchema(utility::getProtoMessage(this));
-}
-
-#endif
 static_assert(sizeof(Point3f) == 12, "Point3f size must be 12 bytes");
-static_assert(sizeof(Point3fRGBA) == 16, "Point3fRGBA size must be 16 bytes");
+
 }  // namespace dai

@@ -1,11 +1,10 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 #include <depthai/pipeline/datatype/ImageManipConfig.hpp>
 
 // shared
-#include <depthai/properties/ImageManipProperties.hpp>
-#include <functional>
+#include <depthai-shared/properties/ImageManipProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -13,45 +12,65 @@ namespace node {
 /**
  * @brief ImageManip node. Capability to crop, resize, warp, ... incoming image frames
  */
-class ImageManip : public DeviceNodeCRTP<DeviceNode, ImageManip, ImageManipProperties>, public HostRunnable {
-   private:
-    bool runOnHostVar = false;
-
-   protected:
-    Properties& getProperties() override;
-
+class ImageManip : public NodeCRTP<Node, ImageManip, ImageManipProperties> {
    public:
     constexpr static const char* NAME = "ImageManip";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
-    using Backend = ImageManipProperties::Backend;
-    using PerformanceMode = ImageManipProperties::PerformanceMode;
 
-    ImageManip() = default;
-    ImageManip(std::unique_ptr<Properties> props);
+   protected:
+    Properties& getProperties();
 
-    std::shared_ptr<ImageManip> build() {
-        return std::static_pointer_cast<ImageManip>(shared_from_this());
-    }
+   private:
+    std::shared_ptr<RawImageManipConfig> rawConfig;
+
+    void setWarpMesh(const float* meshData, int numMeshPoints, int width, int height);
+
+   public:
+    ImageManip(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    ImageManip(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+
     /**
      * Initial config to use when manipulating frames
      */
-    std::shared_ptr<ImageManipConfig> initialConfig = std::make_shared<ImageManipConfig>();
+    ImageManipConfig initialConfig;
 
     /**
      * Input ImageManipConfig message with ability to modify parameters in runtime
+     * Default queue is blocking with size 8
      */
-    Input inputConfig{*this, {"inputConfig", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::ImageManipConfig, true}}}, false}};
+    Input inputConfig{*this, "inputConfig", Input::Type::SReceiver, true, 8, {{DatatypeEnum::ImageManipConfig, true}}};
 
     /**
      * Input image to be modified
+     * Default queue is blocking with size 8
      */
-    Input inputImage{*this, {"inputImage", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::ImgFrame, true}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input inputImage{*this, "inputImage", Input::Type::SReceiver, true, 8, true, {{DatatypeEnum::ImgFrame, true}}};
 
     /**
      * Outputs ImgFrame message that carries modified image.
      */
-    // Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, true}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
+
+    // Functions to set ImageManipConfig - deprecated
+    [[deprecated("Use 'initialConfig.setCropRect()' instead")]] void setCropRect(float xmin, float ymin, float xmax, float ymax);
+    [[deprecated("Use 'initialConfig.setCenterCrop()' instead")]] void setCenterCrop(float ratio, float whRatio = 1.0f);
+    [[deprecated("Use 'initialConfig.setResize()' instead")]] void setResize(int w, int h);
+    [[deprecated("Use 'initialConfig.setResizeThumbnail()' instead")]] void setResizeThumbnail(int w, int h, int bgRed = 0, int bgGreen = 0, int bgBlue = 0);
+    [[deprecated("Use 'initialConfig.setFrameType()' instead")]] void setFrameType(ImgFrame::Type name);
+    [[deprecated("Use 'initialConfig.setHorizontalFlip()' instead")]] void setHorizontalFlip(bool flip);
+    void setKeepAspectRatio(bool keep);
+
+    // Functions to set properties
+    /**
+     * Specify whether or not wait until configuration message arrives to inputConfig Input.
+     * @param wait True to wait for configuration message, false otherwise.
+     */
+    [[deprecated("Use 'inputConfig.setWaitForMessage()' instead")]] void setWaitForConfigInput(bool wait);
+
+    /**
+     * @see setWaitForConfigInput
+     * @returns True if wait for inputConfig message, false otherwise
+     */
+    [[deprecated("Use 'inputConfig.setWaitForMessage()' instead")]] bool getWaitForConfigInput() const;
 
     /**
      * Specify number of frames in pool.
@@ -66,29 +85,13 @@ class ImageManip : public DeviceNodeCRTP<DeviceNode, ImageManip, ImageManipPrope
     void setMaxOutputFrameSize(int maxFrameSize);
 
     /**
-     * Specify whether to run on host or device
-     * @param runOnHost Run node on host
+     * Set a custom warp mesh
+     * @param meshData 2D plane of mesh points, starting from top left to bottom right
+     * @param width Width of mesh
+     * @param height Height of mesh
      */
-    ImageManip& setRunOnHost(bool runOnHost = true);
-
-    /**
-     * Set CPU as backend preference
-     * @param backend Backend preference
-     */
-    ImageManip& setBackend(Backend backend);
-
-    /**
-     * Set performance mode
-     * @param performanceMode Performance mode
-     */
-    ImageManip& setPerformanceMode(PerformanceMode performanceMode);
-
-    /**
-     * Check if the node is set to run on host
-     */
-    bool runOnHost() const override;
-
-    void run() override;
+    void setWarpMesh(const std::vector<Point2f>& meshData, int width, int height);
+    void setWarpMesh(const std::vector<std::pair<float, float>>& meshData, int width, int height);
 };
 
 }  // namespace node

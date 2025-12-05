@@ -1,9 +1,9 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 
 // shared
-#include <depthai/properties/SystemLoggerProperties.hpp>
+#include <depthai-shared/properties/SystemLoggerProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -11,18 +11,18 @@ namespace node {
 /**
  * @brief SystemLogger node. Send system information periodically.
  */
-class SystemLogger : public DeviceNodeCRTP<DeviceNode, SystemLogger, SystemLoggerProperties> {
+class SystemLogger : public NodeCRTP<Node, SystemLogger, SystemLoggerProperties> {
    public:
     constexpr static const char* NAME = "SystemLogger";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+    SystemLogger(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    SystemLogger(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
-     * Outputs SystemInformation[S3] message that carries various system information
+     * Outputs SystemInformation message that carries various system information
      * like memory and CPU usage, temperatures, ...
-     * For series 2 devices outputs SystemInformation message,
-     * for series 3 devices outputs SystemInformationS3 message
      */
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::SystemInformation, false}, {DatatypeEnum::SystemInformationS3, false}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::SystemInformation, false}}};
 
     /**
      * Specify logging rate, at which messages will be sent out
@@ -34,8 +34,6 @@ class SystemLogger : public DeviceNodeCRTP<DeviceNode, SystemLogger, SystemLogge
      * Gets logging rate, at which messages will be sent out
      */
     float getRate();
-
-    void buildInternal() override;
 };
 
 }  // namespace node

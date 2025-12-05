@@ -5,10 +5,21 @@
 namespace dai {
 namespace node {
 
-MonoCamera::MonoCamera(std::unique_ptr<Properties> props) : DeviceNodeCRTP<DeviceNode, MonoCamera, MonoCameraProperties>(std::move(props)) {}
+MonoCamera::MonoCamera(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId) : MonoCamera(par, nodeId, std::make_unique<MonoCamera::Properties>()) {}
+MonoCamera::MonoCamera(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props)
+    : NodeCRTP<Node, MonoCamera, MonoCameraProperties>(par, nodeId, std::move(props)),
+      rawControl(std::make_shared<RawCameraControl>()),
+      initialControl(rawControl) {
+    properties.boardSocket = CameraBoardSocket::AUTO;
+    properties.resolution = MonoCameraProperties::SensorResolution::THE_720_P;
+    properties.fps = 30.0;
+
+    setInputRefs({&inputControl});
+    setOutputRefs({&out, &raw, &frameEvent});
+}
 
 MonoCamera::Properties& MonoCamera::getProperties() {
-    properties.initialControl = initialControl;
+    properties.initialControl = *rawControl;
     return properties;
 }
 
@@ -68,11 +79,6 @@ CameraImageOrientation MonoCamera::getImageOrientation() const {
     return properties.imageOrientation;
 }
 
-void MonoCamera::setMockIspSize(int width, int height) {
-    properties.mockIspWidth = width;
-    properties.mockIspHeight = height;
-}
-
 void MonoCamera::setResolution(MonoCameraProperties::SensorResolution resolution) {
     properties.resolution = resolution;
 }
@@ -128,14 +134,6 @@ std::tuple<int, int> MonoCamera::getResolutionSize() const {
         case MonoCameraProperties::SensorResolution::THE_1200_P:
             return {1920, 1200};
             break;
-
-        case MonoCameraProperties::SensorResolution::THE_4000X3000:
-            return {4000, 3000};
-            break;
-
-        case MonoCameraProperties::SensorResolution::THE_4224X3136:
-            return {4224, 3136};
-            break;
     }
     return {1280, 720};
 }
@@ -164,27 +162,6 @@ int MonoCamera::getRawNumFramesPool() const {
 
 void MonoCamera::setRawOutputPacked(bool packed) {
     properties.rawPacked = packed;
-}
-
-bool MonoCamera::isSourceNode() const {
-    return true;
-}
-
-NodeRecordParams MonoCamera::getNodeRecordParams() const {
-    if(properties.boardSocket == CameraBoardSocket::AUTO) {
-        throw std::runtime_error("For record and replay functionality, board socket must be specified (Camera).");
-    }
-    NodeRecordParams params;
-    params.video = true;
-    params.name = "Camera" + toString(properties.boardSocket);
-    return params;
-}
-
-MonoCamera::Output& MonoCamera::getRecordOutput() {
-    return out;
-}
-MonoCamera::Input& MonoCamera::getReplayInput() {
-    return mockIsp;
 }
 
 }  // namespace node

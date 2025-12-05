@@ -2,125 +2,27 @@
 Changelog for package depthai
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-3.2.1 (2025-12-01)
-------------------
-## Bug fixes
-* [_RVC4_] Fix a regression for IMX586 only working with the 4000x3000 sensor config at 30 FPS
-On the LuxonisOS 1.20.5 and newer, up to 240 FPS is now supported
-
-3.2.0 (2025-12-01)
-------------------
+2.31.0 (2025-12-03)
+-------------------
 ## Features
-* Extend `DetectionParser` and `ImgDetections` message with **instance segmentation** and **keypoints** parsing
-     * Keypoints run on device for both RVC2 and RVC4
-     * Instance segmentation runs on device for RVC4 and on host for RVC2
-     * C++  examples [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/cpp/DetectionNetwork) and Python examples [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/python/DetectionNetwork)
-* Add support for the new Snaps&Events API:
-    * Example for C++ [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/cpp/Events) and for Python [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/python/Events)
-* [_RVC4_] Add **NeuralDepth** node supporting the neural depth running on device
-     * Supported on Luxonis OS 1.20.4 and newer
-     * Four sizes supported
-         * LARGE -> 768x480 @ 10.8 FPS
-         * MEDIUM -> 576x360 @ 25.5 FPS
-         * SMALL -> 480x300 @ 42.5 FPS
-         * NANO -> 384x240 @ 59.7 FPS
-     * Examples for C++ [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/cpp/NeuralDepth) and for Python [here](https://github.com/luxonis/depthai-core/tree/v3.2.0/examples/python/NeuralDepth)
-* [_RVC4_] Switch the front LED to green when DepthAI is running
-* [_RVC2_] Add tuning for the IMX577 sensor, removing the previously present blue tint
+* Add tuning for the IMX577 sensor, removing the previously present blue tint
+* Improve IMX678 support on RVC2 with better black level correction, improving brightness and color accuracy
 
-
+## New devices support
+* Add support for a new revision of OAK-Thermal (R8)
+* Add support for OAK-ToF (R4)
+* Add support for a new revision of OAK-D-S2-[Pro]-Wide OV9728 variant (R8)
+ 
 ## Bug fixes and stability
-* Fix an edge case for IPv4LL discovery on MacOS https://github.com/luxonis/XLink/pull/100
-* [_RVC4_] Fix a small memory leak on RVC4 happening in Camera node and in StereoDepth when extended mode is enabled
-* [_RVC2_] Fix a rare issue of IMU preventing a device reboot
-* [_RVC2_] Patch ToF calibration that caused a minor bump in readout values in the middle of the frame
-
-3.1.0 (2025-11-05)
-------------------
-## Features
-* Automatically select the number of pools in Camera node
-    *  Improves the performance at high resolutions for OAK1-Max
-* Implement the maximum exposure cap in AE on RVC4
-    *  Requires Luxonis OS v1.19.1
-* Add setters to `PointCloudData` message
-    * C++ example [here](https://github.com/luxonis/depthai-core/blob/main/examples/cpp/RGBD/rgbd_pcl_processing.cpp)
-    * Python example [here](https://github.com/luxonis/depthai-core/blob/main/examples/python/RGBD/rgbd_pcl_processing.py)
-
-## Bug fixes
-* Address MacOS weak vtables issues causing deadlocks in the new `DynamicCalibration` node
+* Fix a rare issue of IMU preventing a device reboot
+* Fix a timestamp overflow bug on the BNO08x IMU
+* Fix an edge case where `dai.Device` constructor could get stuck indefinitely if the device lost connection at the wrong time by adding a timeout internally
 * Turn on the watchdog early during discovery of RVC2 USB devices to avoid soft bricking the device along with handling the case where the device gets into that state to recover it on the next boot
-* Fix the usage of RVC2 devices inside Linux containers because of missing udev support
-* Fix undistortion on RVC4 for the chroma plane when `NV12` type is requested
-* Use the correct `ImgTransformations` in SpatialDetectionNetwork on RVC4 in case depth was not aligned to RGB
-* Stability fixes for rare case with IMU halting the destruction on RVC2
-* Fix a timestamp overflow bug on the BNO08x IMU on RVC2
+* Fully disable crashdump extraction when `DEPTHAI_CRASHDUMP=0` is set
 
 ## Misc
-* Update `zoo_helper` binary with better error handling
-* Reduce the number of symbols on Windows by performing more aggressive inlining
-* `DynamicCalibration` input control now has a shorter API to send commands to the node
-* Add intrinsics metadata to thermal frames
-* Update the examples using `StereoDepth` node with removing the explicit `NV12` type request for better performance
-* Improve IMX678 support on RVC2 with better black level correction, improving brightness and color accuracy 
-* [Python bindings] Add explicit `numpy` requirement to the Python wheels
-* [Python bindings] Add missing bindings to set the filter order on the `StereoDepth` node
-
-3.0.0 (2025-07-31)
-------------------
-# DepthAI v3.0.0 release candidate is out :tada:
-We’re proud to announce a new major revision of the DepthAI library is now in release candidate stage and ready to be used.
-
-## Simplified API
-We've simplified and unified the API to lower the barrier to entry and make development more intuitive. Core tasks like setting up camera streams, running neural networks, and building spatial pipelines are now streamlined with fewer lines of code.
-
-We have removed many deprecated functions and simplified node constructors, creating a cleaner, more consistent, and easier-to-use library for newcomers as well as more experienced users.
-
-## Refreshed nodes
-We've revisited some of the most fundamental nodes to make them more powerful and flexible.
-
-*   **Camera**
-    *   The `ColorCamera` and `MonoCamera` nodes have been replaced by a single, generic `Camera` node that works across all platforms.
-    *   It supports a variable number of outputs, where each can have an independent:
-        * Type (NV12, RGB interleaved or planar, ...)
-        * Size
-        * FPS
-    * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/Camera) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/Camera) examples.
-
-*   **ImageManip**
-    *   The `ImageManip` node has been revised for more robust and predictable behavior (we now track the order of operations to make the output fully deterministic).
-    *   It now supports relative crops and can be used as a host-side node in addition to running on RVC2 and RVC4 devices.
-    *   [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/ImageManip/) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/ImageManip/) examples.
-
-## New nodes
-DepthAI v3 introduces new high-level nodes to simplify working with high level concepts (RGBD pointclouds, SLAM)
-
-*   **RGBD**: This node makes it easy to work with synchronized and aligned color and depth data. It features an "autocreate" mode that automatically constructs the required input pipeline, delivering a ready-to-use RGBD message or a colored point cloud.
-     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RGBD) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RGBD) examples. 
-*   **VSLAM**: We've added SLAM and VIO as host nodes, enabling advanced spatial AI applications. These are currently available on Linux and macOS and are in early preview.
-     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RVC2/VSLAM) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RVC2/VSLAM) examples.
-
-## Support for host nodes
-DepthAI v3 now supports custom host nodes, allowing you to run parts of your pipeline on the host with custom logic while keeping the rest on-device. Whether you need to run complex post-processing in Python or integrate with external libraries, it’s all part of the same unified pipeline. See the [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/HostNodes) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/HostNodes) examples.
-
-## Visualizer
-Debugging and development just got easier with our new integrated visualizer. You can now visualize camera streams, neural network outputs, and detection overlays in real-time. The visualizer is also able to display the pipeline graph, making it a great tool for understanding and debugging your application's data flow.
-See the [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/Visualizer) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/Visualizer) examples.
-
-## A lot of nice to have features:
-*   **Auto reconnect**: If a device has a flaky connection and crashes, the library will now automatically try to reconnect instead of exiting, making your applications more resilient.
-*   **Unified Coordinate System**: We’ve standardized all coordinate systems. Camera, IMU, and spatial data now use the RDF (Right-Down-Forward) convention, eliminating inconsistencies when fusing data from multiple sensors.
-*   **Native Model Zoo Support**: Take advantage of the new Luxonis Model Zoo, which integrates natively into v3. Loading and deploying models is now seamless, with no boilerplate required.
-* **Remapping points between different frames**: We've much improved the developer experience where detections from one image in the pipeline (on the input of the NN for example) need to be remapped to another image in the pipeline, that's still in full resolution by internally tracking all of the image operations that are made to streams. See [Python](https://github.com/luxonis/depthai-core/blob/main/examples/python/ImageManip/image_manip_remap.py) and [C++](https://github.com/luxonis/depthai-core/blob/main/examples/cpp/ImageManip/image_manip_remap.cpp) examples.
-
-## Support for RVC4 devices
-DepthAI v3 brings support for both RVC2 and RVC4 devices, with a unified codebase that runs on both platforms. This allows you to prototype on one and deploy on another without code changes in most cases.
-
-## Migration from v2.x version of the library
-We've prepared a porting guide to speed up the migration [here](https://github.com/luxonis/depthai-core/blob/main/V2V3PortinGuide.md).
-
-## Known issues
-*   On release flavors of the Luxonis OS on RVC4, the camera stack can get stuck in a bad state where cameras do not restart streaming, requiring a device reboot. It is recommended to use `-debug` versions of the OS until this is resolved.
-
+* Add support to explicitly remove tracklets in `ObjectTracker` node
+* Remove limitation for the maximum watchdog frequency from 4.5 seconds to unlimited ("infinity") by adding a software watchdog in firmware
 
 
 2.30.0 (2025-03-18)

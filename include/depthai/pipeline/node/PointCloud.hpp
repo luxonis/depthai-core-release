@@ -1,13 +1,12 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 
 // standard
 #include <fstream>
 
 // shared
-#include <depthai/properties/PointCloudProperties.hpp>
-#include <memory>
+#include <depthai-shared/properties/PointCloudProperties.hpp>
 
 #include "depthai/pipeline/datatype/PointCloudConfig.hpp"
 
@@ -17,42 +16,48 @@ namespace node {
 /**
  * @brief PointCloud node. Computes point cloud from depth frames.
  */
-class PointCloud : public DeviceNodeCRTP<DeviceNode, PointCloud, PointCloudProperties> {
+class PointCloud : public NodeCRTP<Node, PointCloud, PointCloudProperties> {
    public:
     constexpr static const char* NAME = "PointCloud";
 
    protected:
-    Properties& getProperties() override;
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+    Properties& getProperties();
+
+   private:
+    std::shared_ptr<RawPointCloudConfig> rawConfig;
 
    public:
+    PointCloud(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    PointCloud(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+
     /**
      * Initial config to use when computing the point cloud.
      */
-    std::shared_ptr<PointCloudConfig> initialConfig = std::make_shared<PointCloudConfig>();
+    PointCloudConfig initialConfig;
 
     /**
      * Input PointCloudConfig message with ability to modify parameters in runtime.
      * Default queue is non-blocking with size 4.
      */
-    Input inputConfig{*this, {"inputConfig", DEFAULT_GROUP, false, 4, {{{DatatypeEnum::PointCloudConfig, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input inputConfig{*this, "inputConfig", Input::Type::SReceiver, false, 4, {{DatatypeEnum::PointCloudConfig, false}}};
 
     /**
      * Input message with depth data used to create the point cloud.
      * Default queue is non-blocking with size 4.
      */
-    Input inputDepth{*this, {"inputDepth", DEFAULT_GROUP, false, 4, {{{DatatypeEnum::ImgFrame, false}}}, true}};
+    Input inputDepth{*this, "inputDepth", Input::Type::SReceiver, false, 4, true, {{DatatypeEnum::ImgFrame, false}}};
 
     /**
      * Outputs PointCloudData message
      */
-    Output outputPointCloud{*this, {"outputPointCloud", DEFAULT_GROUP, {{{DatatypeEnum::PointCloudData, false}}}}};
+    Output outputPointCloud{*this, "outputPointCloud", Output::Type::MSender, {{DatatypeEnum::PointCloudData, false}}};
 
     /**
      * Passthrough depth from which the point cloud was calculated.
      * Suitable for when input queue is set to non-blocking behavior.
      */
-    Output passthroughDepth{*this, {"passthroughDepth", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+    Output passthroughDepth{*this, "passthroughDepth", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
+
     /**
      * Specify number of frames in pool.
      * @param numFramesPool How many frames should the pool have

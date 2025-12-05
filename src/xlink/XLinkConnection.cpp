@@ -29,28 +29,27 @@ namespace dai {
 
 DeviceInfo::DeviceInfo(const deviceDesc_t& desc) {
     name = std::string(desc.name);
-    deviceId = std::string(desc.mxid);
+    mxid = std::string(desc.mxid);
     state = desc.state;
     protocol = desc.protocol;
     platform = desc.platform;
     status = desc.status;
 }
 
-DeviceInfo::DeviceInfo(
-    std::string name, std::string deviceId, XLinkDeviceState_t state, XLinkProtocol_t protocol, XLinkPlatform_t platform, XLinkError_t status)
-    : name(std::move(name)), deviceId(std::move(deviceId)), state(state), protocol(protocol), platform(platform), status(status) {}
+DeviceInfo::DeviceInfo(std::string name, std::string mxid, XLinkDeviceState_t state, XLinkProtocol_t protocol, XLinkPlatform_t platform, XLinkError_t status)
+    : name(std::move(name)), mxid(std::move(mxid)), state(state), protocol(protocol), platform(platform), status(status) {}
 
-DeviceInfo::DeviceInfo(std::string deviceIdOrName) {
+DeviceInfo::DeviceInfo(std::string mxidOrName) {
     // Parse parameter and set to ip if any dots found
-    // deviceId doesn't have a dot in the name
-    if(deviceIdOrName.find(".") != std::string::npos) {
+    // mxid doesn't have a dot in the name
+    if(mxidOrName.find(".") != std::string::npos) {
         // This is reasoned as an IP address or USB path (name). Set rest of info accordingly
-        name = std::move(deviceIdOrName);
-        deviceId = "";
+        name = std::move(mxidOrName);
+        mxid = "";
     } else {
-        // This is reasoned as deviceId
+        // This is reasoned as mxid
         name = "";
-        deviceId = std::move(deviceIdOrName);
+        mxid = std::move(mxidOrName);
     }
 }
 
@@ -60,7 +59,7 @@ deviceDesc_t DeviceInfo::getXLinkDeviceDesc() const {
 
     // c_str is guranteed to be nullterminated
     desc.mxid[sizeof(desc.mxid) - 1] = 0;
-    strncpy(desc.mxid, deviceId.c_str(), sizeof(desc.mxid) - 1);
+    strncpy(desc.mxid, mxid.c_str(), sizeof(desc.mxid) - 1);
     desc.name[sizeof(desc.name) - 1] = 0;
     strncpy(desc.name, name.c_str(), sizeof(desc.name) - 1);
 
@@ -74,17 +73,13 @@ deviceDesc_t DeviceInfo::getXLinkDeviceDesc() const {
 
 // backward compatibility
 std::string DeviceInfo::getMxId() const {
-    return deviceId;
-}
-
-std::string DeviceInfo::getDeviceId() const {
-    return deviceId;
+    return mxid;
 }
 
 std::string DeviceInfo::toString() const {
-    return fmt::format("DeviceInfo(name={}, deviceId={}, {}, {}, {}, {})",
+    return fmt::format("DeviceInfo(name={}, mxid={}, {}, {}, {}, {})",
                        name,
-                       deviceId,
+                       mxid,
                        XLinkDeviceStateToStr(state),
                        XLinkProtocolToStr(protocol),
                        XLinkPlatformToStr(platform),
@@ -94,7 +89,7 @@ std::string DeviceInfo::toString() const {
 static XLinkProtocol_t getDefaultProtocol() {
     XLinkProtocol_t defaultProtocol = X_LINK_ANY_PROTOCOL;
 
-    auto protocolStr = utility::getEnvAs<std::string>("DEPTHAI_PROTOCOL", "");
+    auto protocolStr = utility::getEnv("DEPTHAI_PROTOCOL");
 
     std::transform(protocolStr.begin(), protocolStr.end(), protocolStr.begin(), ::tolower);
     if(protocolStr.empty() || protocolStr == "any") {
@@ -103,10 +98,6 @@ static XLinkProtocol_t getDefaultProtocol() {
         defaultProtocol = X_LINK_USB_VSC;
     } else if(protocolStr == "tcpip") {
         defaultProtocol = X_LINK_TCP_IP;
-    } else if(protocolStr == "tcpshd") {
-        defaultProtocol = X_LINK_TCP_IP_OR_LOCAL_SHDMEM;
-    } else if(protocolStr == "shdmem") {
-        defaultProtocol = X_LINK_LOCAL_SHDMEM;
     } else {
         logger::warn("Unsupported protocol specified");
     }
@@ -114,60 +105,33 @@ static XLinkProtocol_t getDefaultProtocol() {
     return defaultProtocol;
 }
 
-static XLinkPlatform_t getDefaultPlatform() {
-    XLinkPlatform_t defaultPlatform = X_LINK_ANY_PLATFORM;
-
-    auto protocolStr = utility::getEnvAs<std::string>("DEPTHAI_PLATFORM", "");
-
-    std::transform(protocolStr.begin(), protocolStr.end(), protocolStr.begin(), ::tolower);
-    if(protocolStr.empty() || protocolStr == "any") {
-        defaultPlatform = X_LINK_ANY_PLATFORM;
-    } else if(protocolStr == "rvc2" || protocolStr == "myriadx") {
-        defaultPlatform = X_LINK_MYRIAD_X;
-    } else if(protocolStr == "rvc3") {
-        defaultPlatform = X_LINK_RVC3;
-    } else if(protocolStr == "rvc4") {
-        defaultPlatform = X_LINK_RVC4;
-    } else {
-        spdlog::warn("Unsupported platform specified");
-    }
-
-    return defaultPlatform;
-}
-
 // STATIC
 constexpr std::chrono::milliseconds XLinkConnection::WAIT_FOR_BOOTUP_TIMEOUT;
 constexpr std::chrono::milliseconds XLinkConnection::WAIT_FOR_CONNECT_TIMEOUT;
 constexpr std::chrono::milliseconds XLinkConnection::POLLING_DELAY_TIME;
 
-bool isInCommaSeparatedVar(std::string list, std::string value) {
-    const std::string delimiter = ",";
-    for(auto& val : utility::splitList(list, delimiter)) {
-        if(val == value) {
-            return true;
-        }
-    }
-    return false;
-}
+std::vector<DeviceInfo> XLinkConnection::getAllConnectedDevices(XLinkDeviceState_t state, bool skipInvalidDevices, XLinkPlatform_t platform) {
+    initialize();
 
-std::vector<DeviceInfo> filterDevices(const std::vector<DeviceInfo>& deviceInfos, bool skipInvalidDevices = true) {
-    auto allowedDeviceMxIds = utility::getEnvAs<std::string>("DEPTHAI_DEVICE_MXID_LIST", "");
-    auto allowedDeviceIds = utility::getEnvAs<std::string>("DEPTHAI_DEVICE_ID_LIST", "");
-    auto allowedDeviceNames = utility::getEnvAs<std::string>("DEPTHAI_DEVICE_NAME_LIST", "");
-    std::vector<DeviceInfo> filteredEnvs;
-    for(auto& info : deviceInfos) {
-        bool allowedMxId = isInCommaSeparatedVar(allowedDeviceMxIds, info.getDeviceId()) || allowedDeviceMxIds.empty();
-        bool allowedId = isInCommaSeparatedVar(allowedDeviceIds, info.getDeviceId()) || allowedDeviceIds.empty();
-        bool allowedName = isInCommaSeparatedVar(allowedDeviceNames, info.name) || allowedDeviceNames.empty();
-        if(allowedMxId && allowedId && allowedName) {
-            filteredEnvs.push_back(info);
-            logger::info("Adding device to the filtered list: {}", info.toString());
-        } else {
-            logger::info("Skipping device: {}", info.toString());
-        }
-    }
-    std::vector<DeviceInfo> filtered;
-    for(auto& info : filteredEnvs) {
+    std::vector<DeviceInfo> devices;
+
+    unsigned int numdev = 0;
+    std::array<deviceDesc_t, 64> deviceDescAll = {};
+    deviceDesc_t suitableDevice = {};
+    suitableDevice.protocol = getDefaultProtocol();
+    suitableDevice.platform = platform;
+    suitableDevice.state = state;
+
+    auto allowedDeviceMxIds = utility::getEnv("DEPTHAI_DEVICE_MXID_LIST");
+    auto allowedDeviceIds = utility::getEnv("DEPTHAI_DEVICE_ID_LIST");
+    auto allowedDeviceNames = utility::getEnv("DEPTHAI_DEVICE_NAME_LIST");
+
+    auto status = XLinkFindAllSuitableDevices(suitableDevice, deviceDescAll.data(), static_cast<unsigned int>(deviceDescAll.size()), &numdev);
+    if(status != X_LINK_SUCCESS && status != X_LINK_DEVICE_NOT_FOUND) throw std::runtime_error("Couldn't retrieve all connected devices");
+
+    for(unsigned i = 0; i < numdev; i++) {
+        DeviceInfo info(deviceDescAll.at(i));
+
         if(skipInvalidDevices) {
             if(info.status == X_LINK_SUCCESS) {
                 // device is okay
@@ -181,85 +145,16 @@ std::vector<DeviceInfo> filterDevices(const std::vector<DeviceInfo>& deviceInfos
                 continue;
             }
         }
-        filtered.push_back(info);
-    }
 
-    return filtered;
-}
-
-std::vector<DeviceInfo> XLinkConnection::getAllConnectedDevices(XLinkDeviceState_t state, bool skipInvalidDevices, int timeoutMs) {
-    initialize();
-
-    std::vector<DeviceInfo> devices;
-    std::vector<DeviceInfo> devicesFiltered;
-    unsigned int numdev = 0;
-    std::array<deviceDesc_t, 64> deviceDescAll = {};
-    deviceDesc_t suitableDevice = {};
-    suitableDevice.protocol = getDefaultProtocol();
-    suitableDevice.platform = getDefaultPlatform();
-    suitableDevice.state = state;
-
-    auto status = XLinkFindAllSuitableDevices(suitableDevice, deviceDescAll.data(), static_cast<unsigned int>(deviceDescAll.size()), &numdev, timeoutMs);
-    if(status == X_LINK_DEVICE_NOT_FOUND) {
-        return devices;
-    }
-    if(status != X_LINK_SUCCESS) {
-        throw std::runtime_error(fmt::format("Couldn't retrieve all connected devices - status {}", static_cast<int>(status)));
-    }
-
-    for(unsigned i = 0; i < numdev; i++) {
-        DeviceInfo info(deviceDescAll.at(i));
-        devices.push_back(info);
-    }
-
-    devicesFiltered = filterDevices(devices, skipInvalidDevices);
-    auto allowedDeviceNames = utility::getEnvAs<std::string>("DEPTHAI_DEVICE_NAME_LIST", "");
-    auto splitList = utility::splitList(allowedDeviceNames, ",");
-    bool allDevicesInEnvVarsFound = true;
-    for(auto& name : splitList) {
-        bool found = false;
-        for(const auto& existingInfo : devices) {
-            if(existingInfo.name == name) {
-                found = true;
-                break;
-            }
-        }
-        if(!found) {
-            allDevicesInEnvVarsFound = false;
-            break;
+        bool allowedMxId = allowedDeviceMxIds.find(info.getMxId()) != std::string::npos || allowedDeviceMxIds.empty();
+        bool allowedId = allowedDeviceIds.find(info.getMxId()) != std::string::npos || allowedDeviceIds.empty();
+        bool allowedName = allowedDeviceNames.find(info.name) != std::string::npos || allowedDeviceNames.empty();
+        if(allowedMxId && allowedId && allowedName) {
+            devices.push_back(info);
         }
     }
 
-    if(!devicesFiltered.empty() && allDevicesInEnvVarsFound) {  // If a device from the list is found, return it without further searching
-        return devicesFiltered;
-    }
-
-    // Now also try to find all devices in the DEPTHAI_DEVICE_NAME_LIST (they were not found earlier if they were not in the same subnet)
-    for(auto& name : splitList) {
-        deviceDesc_t desc = suitableDevice;
-        desc.name[sizeof(desc.name) - 1] = 0;
-        strncpy(desc.name, name.c_str(), sizeof(desc.name) - 1);
-        auto status = XLinkFindAllSuitableDevices(desc, deviceDescAll.data(), static_cast<unsigned int>(deviceDescAll.size()), &numdev, timeoutMs);
-        if(status != X_LINK_SUCCESS) throw std::runtime_error("Couldn't retrieve all connected devices while searching by name");
-        for(unsigned i = 0; i < numdev; i++) {
-            DeviceInfo info(deviceDescAll.at(i));
-            Logging::getInstance().logger.debug("Found device by name: {}", info.toString());
-            // Check if device info was already found and is between the found devices
-            bool alreadyExists = false;
-            for(const auto& existingInfo : devices) {
-                if(existingInfo.getDeviceId() == info.getDeviceId()) {
-                    alreadyExists = true;
-                    break;
-                }
-            }
-            if(!alreadyExists) {
-                devices.push_back(info);
-            }
-        }
-    }
-
-    devicesFiltered = filterDevices(devices, skipInvalidDevices);
-    return devicesFiltered;
+    return devices;
 }
 
 std::tuple<bool, DeviceInfo> XLinkConnection::getFirstDevice(XLinkDeviceState_t state, bool skipInvalidDevice) {
@@ -267,9 +162,9 @@ std::tuple<bool, DeviceInfo> XLinkConnection::getFirstDevice(XLinkDeviceState_t 
 
     DeviceInfo devReq = {};
     devReq.protocol = X_LINK_ANY_PROTOCOL;
-    devReq.platform = X_LINK_ANY_PLATFORM;
+    devReq.platform = X_LINK_MYRIAD_X;
     devReq.name = "";
-    devReq.deviceId = "";
+    devReq.mxid = "";
     devReq.state = state;
 
     deviceDesc_t desc = {};
@@ -294,12 +189,13 @@ std::tuple<bool, DeviceInfo> XLinkConnection::getFirstDevice(XLinkDeviceState_t 
     return {false, {}};
 }
 
-std::tuple<bool, DeviceInfo> XLinkConnection::getDeviceById(std::string deviceId, XLinkDeviceState_t state, bool skipInvalidDevices) {
+std::tuple<bool, DeviceInfo> XLinkConnection::getDeviceByMxId(std::string mxId, XLinkDeviceState_t state, bool skipInvalidDevices) {
     initialize();
 
     DeviceInfo dev;
-    dev.deviceId = deviceId;
+    dev.mxid = mxId;
     dev.state = state;
+    dev.platform = X_LINK_MYRIAD_X;
 
     deviceDesc_t desc = {};
     auto res = XLinkFindFirstSuitableDevice(dev.getXLinkDeviceDesc(), &desc);
@@ -359,7 +255,7 @@ DeviceInfo XLinkConnection::bootBootloader(const DeviceInfo& deviceInfo) {
 
     for(auto ev : evars) {
         auto name = ev.first;
-        auto valstr = utility::getEnvAs<std::string>(name, "");
+        auto valstr = utility::getEnv(name);
         if(!valstr.empty()) {
             try {
                 std::chrono::milliseconds value{std::stoi(valstr)};
@@ -393,8 +289,7 @@ XLinkConnection::XLinkConnection(const DeviceInfo& deviceDesc, std::vector<std::
     initDevice(deviceDesc, expectedState);
 }
 
-XLinkConnection::XLinkConnection(const DeviceInfo& deviceDesc, std::filesystem::path mvcmdPath, XLinkDeviceState_t expectedState)
-    : pathToMvcmd(std::move(mvcmdPath)) {
+XLinkConnection::XLinkConnection(const DeviceInfo& deviceDesc, dai::Path mvcmdPath, XLinkDeviceState_t expectedState) : pathToMvcmd(std::move(mvcmdPath)) {
     initialize();
     if(!pathToMvcmd.empty()) {
         std::ifstream testStream(pathToMvcmd);
@@ -444,7 +339,7 @@ void XLinkConnection::close() {
             bool found = false;
             do {
                 DeviceInfo rebootingDeviceInfo;
-                std::tie(found, rebootingDeviceInfo) = XLinkConnection::getDeviceById(deviceInfo.getDeviceId(), X_LINK_ANY_STATE, false);
+                std::tie(found, rebootingDeviceInfo) = XLinkConnection::getDeviceByMxId(deviceInfo.getMxId(), X_LINK_ANY_STATE, false);
                 if(found) {
                     if(rebootingDeviceInfo.state == X_LINK_UNBOOTED || rebootingDeviceInfo.state == X_LINK_BOOTLOADER) {
                         break;
@@ -471,7 +366,7 @@ bool XLinkConnection::getRebootOnDestruction() const {
     return rebootOnDestruction;
 }
 
-bool XLinkConnection::bootAvailableDevice(const deviceDesc_t& deviceToBoot, const std::filesystem::path& pathToMvcmd) {
+bool XLinkConnection::bootAvailableDevice(const deviceDesc_t& deviceToBoot, const dai::Path& pathToMvcmd) {
     std::ifstream fwStream(pathToMvcmd, std::ios::binary);
     if(!fwStream.is_open()) throw std::runtime_error(fmt::format("Cannot boot firmware, binary at path: {} doesn't exist", pathToMvcmd));
     std::vector<uint8_t> package = std::vector<std::uint8_t>(std::istreambuf_iterator<char>(fwStream), {});
@@ -506,7 +401,7 @@ void XLinkConnection::initDevice(const DeviceInfo& deviceToInit, XLinkDeviceStat
 
     for(auto ev : evars) {
         auto name = ev.first;
-        auto valstr = utility::getEnvAs<std::string>(name, "");
+        auto valstr = utility::getEnv(name);
         if(!valstr.empty()) {
             try {
                 std::chrono::milliseconds value{std::stoi(valstr)};
@@ -551,8 +446,8 @@ void XLinkConnection::initDevice(const DeviceInfo& deviceToInit, XLinkDeviceStat
         }
     }
 
-    // Search for booted device (if expected state is specified)
-    if(expectedState != X_LINK_ANY_STATE) {
+    // Search for booted device
+    {
         // Create description of device to look for
         DeviceInfo bootedDeviceInfo = lastDeviceInfo;
         // Has to match expected state
@@ -594,25 +489,11 @@ void XLinkConnection::initDevice(const DeviceInfo& deviceToInit, XLinkDeviceStat
             std::this_thread::sleep_for(POLLING_DELAY_TIME);
         } while(steady_clock::now() - tstart < connectTimeout);
 
-        if(rc != X_LINK_SUCCESS) {
-            if(rc == X_LINK_INSUFFICIENT_PERMISSIONS) {
-                throw std::runtime_error(
-                    fmt::format("Insufficient permissions to communicate with {} device with name \"{}\". Make sure udev rules are set. Error: {}",
-                                XLinkDeviceStateToStr(desc.state),
-                                desc.name,
-                                convertErrorCodeToString(rc)));
-            } else if(rc == X_LINK_DEVICE_ALREADY_IN_USE) {
-                throw std::runtime_error(fmt::format(
-                    "Cannot connect to device with name \"{}\", it is used by another process. Error: {}", desc.name, convertErrorCodeToString(rc)));
-            } else {
-                throw std::runtime_error(fmt::format("Failed to connect to device with name \"{}\". Error: {}", desc.name, convertErrorCodeToString(rc)));
-            }
-        }
+        if(rc != X_LINK_SUCCESS) throw std::runtime_error("Failed to connect to device, error message: " + convertErrorCodeToString(rc));
 
         deviceLinkId = connectionHandler.linkId;
         deviceInfo = lastDeviceInfo;
         deviceInfo.state = X_LINK_BOOTED;
-        deviceInfo.protocol = connectionHandler.protocol;
     }
 }
 

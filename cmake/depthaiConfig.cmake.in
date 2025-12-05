@@ -1,26 +1,19 @@
-include(CMakeFindDependencyMacro)
+# Get whether library was build as shared or not
+set(DEPTHAI_SHARED_LIBS @BUILD_SHARED_LIBS@)
 
-find_dependency(nlohmann_json CONFIG REQUIRED)
-find_dependency(libnop CONFIG REQUIRED)
-find_dependency(XLink CONFIG REQUIRED COMPONENTS XLinkPublic)
+# Get whether library was build with Backward or not
+set(DEPTHAI_ENABLE_BACKWARD @DEPTHAI_ENABLE_BACKWARD@)
 
-set(DEPTHAI_OPENCV_SUPPORT @DEPTHAI_OPENCV_SUPPORT@)
-set(DEPTHAI_PCL_SUPPORT @DEPTHAI_PCL_SUPPORT@)
-set(DEPTHAI_XTENSOR_SUPPORT @DEPTHAI_XTENSOR_SUPPORT@)
-set(DEPTHAI_DYNAMIC_CALIBRATION_SUPPORT @DEPTHAI_DYNAMIC_CALIBRATION_SUPPORT@)
+set(DEPTHAI_ENABLE_CURL @DEPTHAI_ENABLE_CURL@)
 
-if(DEPTHAI_OPENCV_SUPPORT)
-    find_dependency(OpenCV 4 CONFIG REQUIRED)
-endif()
+# Specify that this is config mode (Called by find_package)
+set(CONFIG_MODE TRUE)
 
+# Compute the installation prefix relative to this file.
+set(_IMPORT_PREFIX "@DEPTHAI_DEPENDENCIES_INSTALLATION_PATH_REL@")
 
-if(DEPTHAI_PCL_SUPPORT)
-    find_dependency(PCL CONFIG REQUIRED)
-endif()
-
-if(DEPTHAI_XTENSOR_SUPPORT)
-    find_dependency(xtensor CONFIG REQUIRED)
-endif()
+# Add dependencies file
+include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Dependencies.cmake")
 
 # Add the targets file
 include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_EXPORT_GROUP@.cmake")

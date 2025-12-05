@@ -2,136 +2,143 @@
 
 namespace dai {
 
+std::shared_ptr<RawBuffer> CameraControl::serialize() const {
+    return raw;
+}
+
+CameraControl::CameraControl() : Buffer(std::make_shared<RawCameraControl>()), cfg(*dynamic_cast<RawCameraControl*>(raw.get())) {}
+CameraControl::CameraControl(std::shared_ptr<RawCameraControl> ptr) : Buffer(std::move(ptr)), cfg(*dynamic_cast<RawCameraControl*>(raw.get())) {}
+
+// helpers
 // Functions to set properties
 CameraControl& CameraControl::setCaptureStill(bool capture) {
     // Enable capture
-    setCommand(Command::STILL_CAPTURE, capture);
+    cfg.setCommand(RawCameraControl::Command::STILL_CAPTURE, capture);
     return *this;
 }
 
 CameraControl& CameraControl::setStartStreaming() {
-    setCommand(Command::START_STREAM);
+    cfg.setCommand(RawCameraControl::Command::START_STREAM);
     return *this;
 }
 CameraControl& CameraControl::setStopStreaming() {
-    setCommand(Command::STOP_STREAM);
+    cfg.setCommand(RawCameraControl::Command::STOP_STREAM);
     return *this;
 }
 CameraControl& CameraControl::setExternalTrigger(int numFramesBurst, int numFramesDiscard) {
-    setCommand(Command::EXTERNAL_TRIGGER);
-    lowPowerNumFramesBurst = numFramesBurst;
-    lowPowerNumFramesDiscard = numFramesDiscard;
+    cfg.setCommand(RawCameraControl::Command::EXTERNAL_TRIGGER);
+    cfg.lowPowerNumFramesBurst = numFramesBurst;
+    cfg.lowPowerNumFramesDiscard = numFramesDiscard;
     return *this;
 }
 
 CameraControl& CameraControl::setFrameSyncMode(FrameSyncMode mode) {
-    setCommand(Command::FRAME_SYNC);
-    frameSyncMode = mode;
+    cfg.setCommand(RawCameraControl::Command::FRAME_SYNC);
+    cfg.frameSyncMode = mode;
     return *this;
 }
 
 CameraControl& CameraControl::setStrobeSensor(int activeLevel) {
-    setCommand(Command::STROBE_CONFIG);
-    strobeConfig.enable = true;
-    strobeConfig.activeLevel = activeLevel;
-    strobeConfig.gpioNumber = -1;
+    cfg.setCommand(RawCameraControl::Command::STROBE_CONFIG);
+    cfg.strobeConfig.enable = true;
+    cfg.strobeConfig.activeLevel = activeLevel;
+    cfg.strobeConfig.gpioNumber = -1;
     return *this;
 }
 
 CameraControl& CameraControl::setStrobeExternal(int gpioNumber, int activeLevel) {
-    setCommand(Command::STROBE_CONFIG);
-    strobeConfig.enable = true;
-    strobeConfig.activeLevel = activeLevel;
-    strobeConfig.gpioNumber = gpioNumber;
+    cfg.setCommand(RawCameraControl::Command::STROBE_CONFIG);
+    cfg.strobeConfig.enable = true;
+    cfg.strobeConfig.activeLevel = activeLevel;
+    cfg.strobeConfig.gpioNumber = gpioNumber;
     return *this;
 }
 
 CameraControl& CameraControl::setStrobeDisable() {
-    setCommand(Command::STROBE_CONFIG);
-    strobeConfig.enable = false;
+    cfg.setCommand(RawCameraControl::Command::STROBE_CONFIG);
+    cfg.strobeConfig.enable = false;
     return *this;
 }
 
 // Focus
 CameraControl& CameraControl::setAutoFocusMode(AutoFocusMode mode) {
-    setCommand(Command::AF_MODE);
-    autoFocusMode = mode;
+    cfg.setCommand(RawCameraControl::Command::AF_MODE);
+    cfg.autoFocusMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setAutoFocusTrigger() {
-    setCommand(Command::AF_TRIGGER);
+    cfg.setCommand(RawCameraControl::Command::AF_TRIGGER);
     return *this;
 }
 CameraControl& CameraControl::setAutoFocusLensRange(int infinityPosition, int macroPosition) {
-    setCommand(Command::AF_LENS_RANGE);
-    lensPosAutoInfinity = infinityPosition;
-    lensPosAutoMacro = macroPosition;
+    cfg.setCommand(RawCameraControl::Command::AF_LENS_RANGE);
+    cfg.lensPosAutoInfinity = infinityPosition;
+    cfg.lensPosAutoMacro = macroPosition;
     return *this;
 }
 CameraControl& CameraControl::setAutoFocusRegion(uint16_t startX, uint16_t startY, uint16_t width, uint16_t height) {
-    setCommand(Command::AF_REGION);
-    afRegion.x = startX;
-    afRegion.y = startY;
-    afRegion.width = width;
-    afRegion.height = height;
-    afRegion.priority = 1;  // TODO
+    cfg.setCommand(RawCameraControl::Command::AF_REGION);
+    cfg.afRegion.x = startX;
+    cfg.afRegion.y = startY;
+    cfg.afRegion.width = width;
+    cfg.afRegion.height = height;
+    cfg.afRegion.priority = 1;  // TODO
     return *this;
 }
-
 CameraControl& CameraControl::setManualFocus(uint8_t lensPosition) {
-    setCommand(Command::MOVE_LENS);
-    this->lensPosition = lensPosition;
+    cfg.setCommand(RawCameraControl::Command::MOVE_LENS);
+    cfg.lensPosition = lensPosition;
     return *this;
 }
 
 CameraControl& CameraControl::setManualFocusRaw(float lensPositionRaw) {
-    setCommand(Command::MOVE_LENS_RAW);
-    this->lensPositionRaw = lensPositionRaw;
+    cfg.setCommand(RawCameraControl::Command::MOVE_LENS_RAW);
+    cfg.lensPositionRaw = lensPositionRaw;
     return *this;
 }
 
 // Exposure
 CameraControl& CameraControl::setAutoExposureEnable() {
-    setCommand(Command::AE_AUTO);
+    cfg.setCommand(RawCameraControl::Command::AE_AUTO);
     return *this;
 }
 CameraControl& CameraControl::setAutoExposureLock(bool lock) {
-    setCommand(Command::AE_LOCK);
-    aeLockMode = lock;
+    cfg.setCommand(RawCameraControl::Command::AE_LOCK);
+    cfg.aeLockMode = lock;
     return *this;
 }
 CameraControl& CameraControl::setAutoExposureRegion(uint16_t startX, uint16_t startY, uint16_t width, uint16_t height) {
-    setCommand(Command::AE_REGION);
-    aeRegion.x = startX;
-    aeRegion.y = startY;
-    aeRegion.width = width;
-    aeRegion.height = height;
-    aeRegion.priority = 1;  // TODO
+    cfg.setCommand(RawCameraControl::Command::AE_REGION);
+    cfg.aeRegion.x = startX;
+    cfg.aeRegion.y = startY;
+    cfg.aeRegion.width = width;
+    cfg.aeRegion.height = height;
+    cfg.aeRegion.priority = 1;  // TODO
     return *this;
 }
 CameraControl& CameraControl::setAutoExposureCompensation(int compensation) {
-    setCommand(Command::EXPOSURE_COMPENSATION);
-    expCompensation = compensation;
+    cfg.setCommand(RawCameraControl::Command::EXPOSURE_COMPENSATION);
+    cfg.expCompensation = compensation;
     return *this;
 }
 CameraControl& CameraControl::setAutoExposureLimit(uint32_t maxExposureTimeUs) {
-    setCommand(CameraControl::Command::AE_TARGET_FPS_RANGE);
-    this->aeMaxExposureTimeUs = maxExposureTimeUs;
+    cfg.setCommand(RawCameraControl::Command::AE_TARGET_FPS_RANGE);
+    cfg.aeMaxExposureTimeUs = maxExposureTimeUs;
     return *this;
 }
 CameraControl& CameraControl::setAutoExposureLimit(std::chrono::microseconds maxExposureTime) {
     return setAutoExposureLimit(maxExposureTime.count());
 }
 CameraControl& CameraControl::setAntiBandingMode(AntiBandingMode mode) {
-    setCommand(Command::ANTIBANDING_MODE);
-    antiBandingMode = mode;
+    cfg.setCommand(RawCameraControl::Command::ANTIBANDING_MODE);
+    cfg.antiBandingMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setManualExposure(uint32_t exposureTimeUs, uint32_t sensitivityIso) {
-    setCommand(Command::AE_MANUAL);
-    expManual.exposureTimeUs = exposureTimeUs;
-    expManual.sensitivityIso = sensitivityIso;
-    expManual.frameDurationUs = 0;  // TODO
+    cfg.setCommand(RawCameraControl::Command::AE_MANUAL);
+    cfg.expManual.exposureTimeUs = exposureTimeUs;
+    cfg.expManual.sensitivityIso = sensitivityIso;
+    cfg.expManual.frameDurationUs = 0;  // TODO
     return *this;
 }
 
@@ -141,80 +148,75 @@ CameraControl& CameraControl::setManualExposure(std::chrono::microseconds exposu
 
 // White Balance
 CameraControl& CameraControl::setAutoWhiteBalanceMode(AutoWhiteBalanceMode mode) {
-    setCommand(Command::AWB_MODE);
-    awbMode = mode;
+    cfg.setCommand(RawCameraControl::Command::AWB_MODE);
+    cfg.awbMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setAutoWhiteBalanceLock(bool lock) {
-    setCommand(Command::AWB_LOCK);
-    awbLockMode = lock;
+    cfg.setCommand(RawCameraControl::Command::AWB_LOCK);
+    cfg.awbLockMode = lock;
     return *this;
 }
 CameraControl& CameraControl::setManualWhiteBalance(int colorTemperatureK) {
-    setCommand(Command::WB_COLOR_TEMP);
-    wbColorTemp = colorTemperatureK;
+    cfg.setCommand(RawCameraControl::Command::WB_COLOR_TEMP);
+    cfg.wbColorTemp = colorTemperatureK;
     return *this;
 }
 
 // Other image controls
 CameraControl& CameraControl::setBrightness(int value) {
-    setCommand(Command::BRIGHTNESS);
-    brightness = value;
+    cfg.setCommand(RawCameraControl::Command::BRIGHTNESS);
+    cfg.brightness = value;
     return *this;
 }
 CameraControl& CameraControl::setContrast(int value) {
-    setCommand(Command::CONTRAST);
-    contrast = value;
+    cfg.setCommand(RawCameraControl::Command::CONTRAST);
+    cfg.contrast = value;
     return *this;
 }
 CameraControl& CameraControl::setSaturation(int value) {
-    setCommand(Command::SATURATION);
-    saturation = value;
+    cfg.setCommand(RawCameraControl::Command::SATURATION);
+    cfg.saturation = value;
     return *this;
 }
 CameraControl& CameraControl::setSharpness(int value) {
-    setCommand(Command::SHARPNESS);
-    sharpness = value;
+    cfg.setCommand(RawCameraControl::Command::SHARPNESS);
+    cfg.sharpness = value;
     return *this;
 }
 CameraControl& CameraControl::setLumaDenoise(int value) {
-    setCommand(Command::LUMA_DENOISE);
-    lumaDenoise = value;
+    cfg.setCommand(RawCameraControl::Command::LUMA_DENOISE);
+    cfg.lumaDenoise = value;
     return *this;
 }
 CameraControl& CameraControl::setChromaDenoise(int value) {
-    setCommand(Command::CHROMA_DENOISE);
-    chromaDenoise = value;
+    cfg.setCommand(RawCameraControl::Command::CHROMA_DENOISE);
+    cfg.chromaDenoise = value;
     return *this;
 }
 CameraControl& CameraControl::setSceneMode(SceneMode mode) {
-    setCommand(Command::SCENE_MODE);
-    sceneMode = mode;
+    cfg.setCommand(RawCameraControl::Command::SCENE_MODE);
+    cfg.sceneMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setEffectMode(EffectMode mode) {
-    setCommand(Command::EFFECT_MODE);
-    effectMode = mode;
+    cfg.setCommand(RawCameraControl::Command::EFFECT_MODE);
+    cfg.effectMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setControlMode(ControlMode mode) {
-    setCommand(CameraControl::Command::CONTROL_MODE);
-    controlMode = mode;
-    return *this;
-}
-CameraControl& CameraControl::setHdr(bool enable) {
-    setCommand(CameraControl::Command::HDR);
-    enableHdr = enable;
+    cfg.setCommand(RawCameraControl::Command::CONTROL_MODE);
+    cfg.controlMode = mode;
     return *this;
 }
 CameraControl& CameraControl::setCaptureIntent(CaptureIntent mode) {
-    setCommand(CameraControl::Command::CAPTURE_INTENT);
-    captureIntent = mode;
+    cfg.setCommand(RawCameraControl::Command::CAPTURE_INTENT);
+    cfg.captureIntent = mode;
     return *this;
 }
 
 CameraControl& CameraControl::setMisc(std::string control, std::string value) {
-    miscControls.push_back(std::make_pair(control, value));
+    cfg.miscControls.push_back(std::make_pair(control, value));
     return *this;
 }
 CameraControl& CameraControl::setMisc(std::string control, int value) {
@@ -224,41 +226,39 @@ CameraControl& CameraControl::setMisc(std::string control, float value) {
     return setMisc(control, std::to_string(value));
 }
 void CameraControl::clearMiscControls() {
-    miscControls.clear();
+    cfg.miscControls.clear();
 }
 std::vector<std::pair<std::string, std::string>> CameraControl::getMiscControls() {
-    return miscControls;
+    return cfg.miscControls;
 }
 
 bool CameraControl::getCaptureStill() const {
-    return getCommand(Command::STILL_CAPTURE);
-}
-
-bool CameraControl::getHdr() const {
-    return enableHdr;
+    return cfg.getCommand(RawCameraControl::Command::STILL_CAPTURE);
 }
 
 std::chrono::microseconds CameraControl::getExposureTime() const {
-    return std::chrono::microseconds(expManual.exposureTimeUs);
+    return std::chrono::microseconds(cfg.expManual.exposureTimeUs);
 }
 
 int CameraControl::getSensitivity() const {
-    return expManual.sensitivityIso;
+    return cfg.expManual.sensitivityIso;
 }
 
 int CameraControl::getLensPosition() const {
-    return lensPosition;
+    return cfg.lensPosition;
 }
 
-CameraControl::~CameraControl() = default;
-
-void CameraControl::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
-    metadata = utility::serialize(*this);
-    datatype = DatatypeEnum::CameraControl;
-};
-
 float CameraControl::getLensPositionRaw() const {
-    return lensPositionRaw;
+    return cfg.lensPositionRaw;
+}
+
+dai::RawCameraControl CameraControl::get() const {
+    return cfg;
+}
+
+CameraControl& CameraControl::set(dai::RawCameraControl config) {
+    cfg = config;
+    return *this;
 }
 
 }  // namespace dai

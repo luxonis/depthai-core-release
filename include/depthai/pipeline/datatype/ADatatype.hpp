@@ -1,11 +1,9 @@
 #pragma once
-#include <memory>
+
+#include <unordered_map>
 #include <vector>
 
-#include "depthai/pipeline/datatype/DatatypeEnum.hpp"
-#include "depthai/utility/Memory.hpp"
-#include "depthai/utility/Serialization.hpp"
-#include "depthai/utility/VectorMemory.hpp"
+#include "depthai-shared/datatype/RawBuffer.hpp"
 
 namespace dai {
 
@@ -14,26 +12,15 @@ class ADatatype {
    protected:
     friend class DataInputQueue;
     friend class StreamMessageParser;
+    std::shared_ptr<RawBuffer> raw;
 
    public:
-#ifdef DEPTHAI_MESSAGES_NO_HEAP
-    explicit ADatatype() = default;
-#else
-    explicit ADatatype() : data{std::make_shared<VectorMemory>(std::vector<uint8_t>())} {};
-#endif
-
-    virtual ~ADatatype();
-    virtual void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const;
-
-    /**
-     * @brief Get the datatype of this specific message
-     * @return DatatypeEnum
-     */
-    virtual DatatypeEnum getDatatype() const {
-        return DatatypeEnum::ADatatype;
+    explicit ADatatype(std::shared_ptr<RawBuffer> r) : raw(std::move(r)) {}
+    virtual ~ADatatype() = default;
+    virtual std::shared_ptr<dai::RawBuffer> serialize() const = 0;
+    std::shared_ptr<RawBuffer> getRaw() const {
+        return raw;
     }
-
-    std::shared_ptr<Memory> data;
 };
 
 }  // namespace dai

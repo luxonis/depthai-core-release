@@ -2,14 +2,38 @@
 
 #include <spdlog/fmt/fmt.h>
 
-#if FMT_VERSION >= 90000
-    #include <spdlog/fmt/ostr.h>
+#include "depthai/utility/Path.hpp"
 
-    #include "depthai/common/CameraBoardSocket.hpp"
-    #include "depthai/pipeline/datatype/DatatypeEnum.hpp"
+#if FMT_VERSION >= 100000
+#include <spdlog/fmt/ostr.h>
+
+#include "depthai/common/CameraBoardSocket.hpp"
+#include "depthai-shared/datatype/DatatypeEnum.hpp"
 #endif
 
-#if FMT_VERSION >= 90000
+namespace dai {
+namespace utility {
+static constexpr char path_convert_err[] = "<Unicode path not convertible>";
+}
+}  // namespace dai
+
+template <>
+struct fmt::formatter<dai::Path> : formatter<std::string> {
+    // https://fmt.dev/latest/api.html#formatting-user-defined-types
+    // https://fmt.dev/latest/syntax.html#format-specification-mini-language
+    template <typename FormatContext>
+    auto format(const dai::Path& p, FormatContext& ctx) {
+        std::string output;
+        try {
+            output = p.string();
+        } catch(const std::exception&) {
+            output = dai::utility::path_convert_err;
+        }
+        return formatter<std::string>::format(output, ctx);
+    }
+};
+
+#if FMT_VERSION >= 100000
 template <>
 struct fmt::formatter<dai::CameraBoardSocket> : ostream_formatter {};
 

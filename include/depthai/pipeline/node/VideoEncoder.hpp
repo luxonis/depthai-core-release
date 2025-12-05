@@ -1,9 +1,9 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 
 // shared
-#include <depthai/properties/VideoEncoderProperties.hpp>
+#include <depthai-shared/properties/VideoEncoderProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -11,28 +11,29 @@ namespace node {
 /**
  * @brief VideoEncoder node. Encodes frames into MJPEG, H264 or H265.
  */
-class VideoEncoder : public DeviceNodeCRTP<DeviceNode, VideoEncoder, VideoEncoderProperties> {
+class VideoEncoder : public NodeCRTP<Node, VideoEncoder, VideoEncoderProperties> {
    public:
     constexpr static const char* NAME = "VideoEncoder";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
-    std::shared_ptr<VideoEncoder> build(Node::Output& input);
+
+    VideoEncoder(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    VideoEncoder(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
      * Input for NV12 ImgFrame to be encoded
+     * Default queue is blocking with size set by 'setNumFramesPool' (4).
      */
-    Input input{*this, {"in", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::ImgFrame, true}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input input{*this, "in", Input::Type::SReceiver, true, 4, true, {{DatatypeEnum::ImgFrame, true}}};
 
     /**
-     * Outputs ImgFrame message that carries BITSTREAM encoded (MJPEG, H264 or H265) frame data.
-     * Mutually exclusive with out.
+     * Outputs ImgFrame message that carries BITSTREAM encoded (MJPEG, H264 or H265) frame data. Mutually exclusive with out.
      */
-    Output bitstream{*this, {"bitstream", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+    Output bitstream{*this, "bitstream", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
 
     /**
-     * Outputs EncodedFrame message that carries encoded (MJPEG, H264 or H265) frame data.
-     * Mutually exclusive with bitstream.
+     * Outputs EncodedFrame message that carries encoded (MJPEG, H264 or H265) frame data. Mutually exclusive with bitstream.
      */
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::EncodedFrame, false}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::EncodedFrame, false}}};
+
     // Sets default options for a specified size and profile
     /**
      * Sets a default preset based on specified frame rate and profile
@@ -40,6 +41,28 @@ class VideoEncoder : public DeviceNodeCRTP<DeviceNode, VideoEncoder, VideoEncode
      * @param profile Encoding profile
      */
     void setDefaultProfilePreset(float fps, Properties::Profile profile);
+
+    /**
+     * Sets a default preset based on specified input size, frame rate and profile
+     * @param width Input frame width
+     * @param height Input frame height
+     * @param fps Frame rate in frames per second
+     * @param profile Encoding profile
+     */
+    [[deprecated("Input width/height no longer needed, automatically determined from first frame")]] void setDefaultProfilePreset(int width,
+                                                                                                                                  int height,
+                                                                                                                                  float fps,
+                                                                                                                                  Properties::Profile profile);
+
+    /**
+     * Sets a default preset based on specified input size, frame rate and profile
+     * @param size Input frame size
+     * @param fps Frame rate in frames per second
+     * @param profile Encoding profile
+     */
+    [[deprecated("Input size no longer needed, automatically determined from first frame")]] void setDefaultProfilePreset(std::tuple<int, int> size,
+                                                                                                                          float fps,
+                                                                                                                          Properties::Profile profile);
 
     // node properties
     /**
@@ -55,14 +78,20 @@ class VideoEncoder : public DeviceNodeCRTP<DeviceNode, VideoEncoder, VideoEncode
     int getNumFramesPool() const;
 
     // encoder properties
-    /// Set rate control mode
+    /// Set rate control mode Applicable only to H264 and H265 profiles
     void setRateControlMode(Properties::RateControlMode mode);
     /// Set encoding profile
     void setProfile(Properties::Profile profile);
-
-    /// Set output bitrate in bps, for CBR rate control mode. 0 for auto (based on frame size and FPS)
+    /// Set encoding profile
+    [[deprecated("Input size no longer needed, automatically determined from first frame")]] void setProfile(std::tuple<int, int> size,
+                                                                                                             Properties::Profile profile);
+    /// Set encoding profile
+    [[deprecated("Input width/height no longer needed, automatically determined from first frame")]] void setProfile(int width,
+                                                                                                                     int height,
+                                                                                                                     Properties::Profile profile);
+    /// Set output bitrate in bps, for CBR rate control mode. 0 for auto (based on frame size and FPS). Applicable only to H264 and H265 profiles
     void setBitrate(int bitrate);
-    /// Set output bitrate in kbps, for CBR rate control mode. 0 for auto (based on frame size and FPS)
+    /// Set output bitrate in kbps, for CBR rate control mode. 0 for auto (based on frame size and FPS). Applicable only to H264 and H265 profiles
     void setBitrateKbps(int bitrateKbps);
 
     /**
@@ -79,11 +108,11 @@ class VideoEncoder : public DeviceNodeCRTP<DeviceNode, VideoEncoder, VideoEncode
      */
     void setKeyframeFrequency(int freq);
 
-    /// Set number of B frames to be inserted
+    /// Set number of B frames to be inserted. Applicable only to H264 and H265 profiles
     void setNumBFrames(int numBFrames);
 
     /**
-     * Set quality
+     * Set quality for [M]JPEG profile
      * @param quality Value between 0-100%. Approximates quality
      */
     void setQuality(int quality);
@@ -120,7 +149,12 @@ class VideoEncoder : public DeviceNodeCRTP<DeviceNode, VideoEncoder, VideoEncode
     int getNumBFrames() const;
     /// Get quality
     int getQuality() const;
-
+    /// Get input size
+    [[deprecated("Input size no longer available, it's determined when first frame arrives")]] std::tuple<int, int> getSize() const;
+    /// Get input width
+    [[deprecated("Input size no longer available, it's determined when first frame arrives")]] int getWidth() const;
+    /// Get input height
+    [[deprecated("Input size no longer available, it's determined when first frame arrives")]] int getHeight() const;
     /// Get frame rate
     float getFrameRate() const;
     /// Get lossless mode. Applies only when using [M]JPEG profile.
