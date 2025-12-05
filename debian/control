@@ -1,0 +1,12 @@
+Source: ros-jazzy-depthai
+Section: misc
+Priority: optional
+Maintainer: Adam Serafin <adam.serafin@luxonis.com>
+Build-Depends: debhelper (>= 9.0.0), libopencv-dev, libusb-1.0-0-dev, nlohmann-json3-dev, ros-jazzy-ament-cmake, ros-jazzy-ros-environment, ros-jazzy-ros-workspace
+Homepage: https://www.luxonis.com/
+Standards-Version: 3.9.2
+
+Package: ros-jazzy-depthai
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libopencv-dev, libusb-1.0-0-dev, nlohmann-json3-dev, ros-jazzy-ros-workspace
+Description: DepthAI core is a C++ library which comes with firmware and an API to interact with OAK Platform
