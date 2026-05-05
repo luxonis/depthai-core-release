@@ -18,6 +18,7 @@ void bind_neuraldepthconfig(pybind11::module& m, void* pCallstack) {
 
     py::class_<NeuralDepthConfig, Py<NeuralDepthConfig>, Buffer, std::shared_ptr<NeuralDepthConfig>> neuralDepthConfig(
         m, "NeuralDepthConfig", DOC(dai, NeuralDepthConfig));
+    py::class_<NeuralDepthConfig::PostProcessing> postProcessing(neuralDepthConfig, "PostProcessing", DOC(dai, NeuralDepthConfig, PostProcessing));
 
     ///////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////
@@ -35,12 +36,26 @@ void bind_neuraldepthconfig(pybind11::module& m, void* pCallstack) {
     // Message
     neuralDepthConfig.def(py::init<>())
         .def("__repr__", &NeuralDepthConfig::str)
-        .def("setConfidenceThreshold", &NeuralDepthConfig::setConfidenceThreshold, DOC(dai, NeuralDepthConfig, setConfidenceThreshold))
+        .def("setConfidenceThreshold",
+             &NeuralDepthConfig::setConfidenceThreshold,
+             py::arg("confidenceThreshold"),
+             DOC(dai, NeuralDepthConfig, setConfidenceThreshold))
         .def("getConfidenceThreshold", &NeuralDepthConfig::getConfidenceThreshold, DOC(dai, NeuralDepthConfig, getConfidenceThreshold))
-        .def("setEdgeThreshold", &NeuralDepthConfig::setEdgeThreshold, DOC(dai, NeuralDepthConfig, setEdgeThreshold))
+        .def("setEdgeThreshold", &NeuralDepthConfig::setEdgeThreshold, py::arg("edgeThreshold"), DOC(dai, NeuralDepthConfig, setEdgeThreshold))
         .def("getEdgeThreshold", &NeuralDepthConfig::getEdgeThreshold, DOC(dai, NeuralDepthConfig, getEdgeThreshold))
-        .def("setDepthUnit", &NeuralDepthConfig::setDepthUnit, DOC(dai, NeuralDepthConfig, setDepthUnit))
+        .def("setDepthUnit", &NeuralDepthConfig::setDepthUnit, py::arg("depthUnit"), DOC(dai, NeuralDepthConfig, setDepthUnit))
         .def("getDepthUnit", &NeuralDepthConfig::getDepthUnit, DOC(dai, NeuralDepthConfig, getDepthUnit))
-        .def("setCustomDepthUnitMultiplier", &NeuralDepthConfig::setCustomDepthUnitMultiplier, DOC(dai, NeuralDepthConfig, setCustomDepthUnitMultiplier))
-        .def("getCustomDepthUnitMultiplier", &NeuralDepthConfig::getCustomDepthUnitMultiplier, DOC(dai, NeuralDepthConfig, getCustomDepthUnitMultiplier));
+        .def("setCustomDepthUnitMultiplier",
+             &NeuralDepthConfig::setCustomDepthUnitMultiplier,
+             py::arg("customDepthUnitMultiplier"),
+             DOC(dai, NeuralDepthConfig, setCustomDepthUnitMultiplier))
+        .def("getCustomDepthUnitMultiplier", &NeuralDepthConfig::getCustomDepthUnitMultiplier, DOC(dai, NeuralDepthConfig, getCustomDepthUnitMultiplier))
+        .def_readwrite("postProcessing", &NeuralDepthConfig::postProcessing, DOC(dai, NeuralDepthConfig, postProcessing));
+
+    // PostProcessing
+    postProcessing.def(py::init<>())
+        .def_readwrite(
+            "confidenceThreshold", &NeuralDepthConfig::PostProcessing::confidenceThreshold, DOC(dai, NeuralDepthConfig, PostProcessing, confidenceThreshold))
+        .def_readwrite("edgeThreshold", &NeuralDepthConfig::PostProcessing::edgeThreshold, DOC(dai, NeuralDepthConfig, PostProcessing, edgeThreshold))
+        .def_readwrite("temporalFilter", &NeuralDepthConfig::PostProcessing::temporalFilter, DOC(dai, NeuralDepthConfig, PostProcessing, temporalFilter));
 }

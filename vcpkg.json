@@ -15,6 +15,7 @@
         "neargye-semver",
         "magic-enum",
         "eigen3",
+        "argparse",
         {
             "name": "libarchive",
             "default-features": false
@@ -27,6 +28,12 @@
           "name": "vcpkg-cmake-config",
           "host": true
         }
+    ],
+    "overrides": [
+    {
+        "name": "vcpkg-tool-meson",
+        "version": "1.9.0"
+    }
     ],
     "features": {
         "opencv-support": {

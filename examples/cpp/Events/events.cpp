@@ -1,4 +1,3 @@
-#include <chrono>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -12,11 +11,39 @@ cv::Rect frameNorm(const cv::Mat& frame, const dai::Point2f& topLeft, const dai:
     return cv::Rect(cv::Point(topLeft.x * width, topLeft.y * height), cv::Point(bottomRight.x * width, bottomRight.y * height));
 }
 
+// Callback functions
+void uploadSuccessCallback(dai::utility::SendSnapCallbackResult sendSnapResult) {
+    std::cout << "Successfully uploaded Snap: (" << sendSnapResult.snapName << ", " << sendSnapResult.snapTimestamp << ", "
+              << sendSnapResult.snapHubID.value_or("") << ") to the hub." << std::endl;
+}
+
+void uploadFailureCallback(dai::utility::SendSnapCallbackResult sendSnapResult) {
+    std::cout << "Upload of Snap: (" << sendSnapResult.snapName << ", " << sendSnapResult.snapTimestamp << ", " << sendSnapResult.snapLocalID
+              << ") to the hub has failed." << std::endl;
+
+    switch(sendSnapResult.uploadStatus) {
+        case dai::utility::SendSnapCallbackStatus::FILE_BATCH_PREPARATION_FAILED:
+            std::cout << "File batch preparation failed!" << std::endl;
+            break;
+        case dai::utility::SendSnapCallbackStatus::GROUP_CONTAINS_REJECTED_FILES:
+            std::cout << "Snap's file group contains rejected files!" << std::endl;
+            break;
+        case dai::utility::SendSnapCallbackStatus::FILE_UPLOAD_FAILED:
+            std::cout << "File upload was unsuccessful!" << std::endl;
+            break;
+        case dai::utility::SendSnapCallbackStatus::SEND_EVENT_FAILED:
+            std::cout << "Snap could not be sent to the hub, following successful file upload!" << std::endl;
+            break;
+        default:
+            break;
+    }
+}
+
 int main() {
     dai::Pipeline pipeline(true);
 
-    // Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or use the EventsManager setToken() method.
-    auto eventsManager = std::make_shared<dai::utility::EventsManager>();
+    // Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or pass the key when creating the EventsManager instance.
+    auto eventsManager = std::make_shared<dai::utility::EventsManager>("");
 
     auto camRgb = pipeline.create<dai::node::Camera>()->build();
     auto detectionNetwork = pipeline.create<dai::node::DetectionNetwork>();
@@ -32,8 +59,11 @@ int main() {
 
     pipeline.start();
 
+    std::cout << "Press 's' to send a snap, and 'q' to quit" << std::endl;
     while(pipeline.isRunning()) {
-        if(cv::waitKey(1) != -1) {
+        auto key = cv::waitKey(1);
+        if(key == 'q') {
+            pipeline.stop();
             break;
         }
 
@@ -71,9 +101,30 @@ int main() {
         }
 
         // Trigger sendSnap()
-        if(cv::waitKey(1) == 's') {
-            eventsManager->sendSnap("ImageDetection", std::nullopt, inRgb, inDet, {"EventsExample", "C++"}, {{"key_0", "value_0"}, {"key_1", "value_1"}});
+        if(key == 's') {
+            auto localSnapID = eventsManager->sendSnap("ImageDetection",
+                                                       std::nullopt,
+                                                       inRgb,
+                                                       inDet,
+                                                       {"EventsExample", "C++"},
+                                                       {{"key_0", "value_0"}, {"key_1", "value_1"}},
+                                                       uploadSuccessCallback,
+                                                       uploadFailureCallback);
+
+            if(localSnapID.has_value()) {
+                std::cout << "Snap with a localID: " << localSnapID.value() << " has been successfully added to the EventsManager" << std::endl;
+            } else {
+                std::cout << "Snap was not successfully added to the EventsManager" << std::endl;
+            }
         }
+    }
+
+    cv::destroyAllWindows();
+    // Wait for pending snaps to be uploaded
+    if(eventsManager->waitForPendingUploads(10000)) {
+        std::cout << "Pending uploads have been successfully uploaded" << std::endl;
+    } else {
+        std::cout << "Pending uploads were discarded due to timeout (10s) or dropped connection" << std::endl;
     }
 
     return EXIT_SUCCESS;
