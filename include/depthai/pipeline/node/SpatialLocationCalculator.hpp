@@ -1,12 +1,9 @@
 #pragma once
 
-#include <depthai/pipeline/Node.hpp>
-
-// standard
-#include <fstream>
+#include <depthai/pipeline/DeviceNode.hpp>
 
 // shared
-#include <depthai-shared/properties/SpatialLocationCalculatorProperties.hpp>
+#include <depthai/properties/SpatialLocationCalculatorProperties.hpp>
 
 #include "depthai/pipeline/datatype/SpatialLocationCalculatorConfig.hpp"
 
@@ -14,61 +11,76 @@ namespace dai {
 namespace node {
 
 /**
- * @brief SpatialLocationCalculator node. Calculates spatial location data on a set of ROIs on depth map.
+ * @brief SpatialLocationCalculator node. Calculates the spatial locations of detected objects based on the input depth map. Spatial location calculations can
+ * be additionally refined by using a segmentation mask. If keypoints are provided, the spatial location is calculated around each keypoint.
  */
-class SpatialLocationCalculator : public NodeCRTP<Node, SpatialLocationCalculator, SpatialLocationCalculatorProperties> {
-   public:
-    constexpr static const char* NAME = "SpatialLocationCalculator";
+class SpatialLocationCalculator : public DeviceNodeCRTP<DeviceNode, SpatialLocationCalculator, SpatialLocationCalculatorProperties>, public HostRunnable {
+   private:
+    bool runOnHostVar = false;
+    std::shared_ptr<SpatialLocationCalculatorConfig> calculationConfig;
 
    protected:
-    Properties& getProperties();
-
-   private:
-    std::shared_ptr<RawSpatialLocationCalculatorConfig> rawConfig;
+    Properties& getProperties() override;
 
    public:
-    SpatialLocationCalculator(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
-    SpatialLocationCalculator(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+    constexpr static const char* NAME = "SpatialLocationCalculator";
+    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+    SpatialLocationCalculator() = default;
+    SpatialLocationCalculator(std::unique_ptr<Properties> props)
+        : DeviceNodeCRTP(std::move(props)), calculationConfig(std::make_shared<SpatialLocationCalculatorConfig>(properties.roiConfig)) {}
 
     /**
      * Initial config to use when calculating spatial location data.
      */
-    SpatialLocationCalculatorConfig initialConfig;
+    std::shared_ptr<SpatialLocationCalculatorConfig> initialConfig = std::make_shared<SpatialLocationCalculatorConfig>();
 
     /**
      * Input SpatialLocationCalculatorConfig message with ability to modify parameters in runtime.
      * Default queue is non-blocking with size 4.
      */
-    Input inputConfig{*this, "inputConfig", Input::Type::SReceiver, false, 4, {{DatatypeEnum::SpatialLocationCalculatorConfig, false}}};
+    Input inputConfig{*this, {"inputConfig", DEFAULT_GROUP, false, 4, {{{DatatypeEnum::SpatialLocationCalculatorConfig, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+
+    /**
+     * Input messages on which spatial location will be calculated.
+     * Possible datatypes are ImgDetections or Keypoints.
+     */
+    Input inputDetections{*this, {"inputDetections", DEFAULT_GROUP, true, 1, {{{DatatypeEnum::ImgDetections, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+
     /**
      * Input message with depth data used to retrieve spatial information about detected object.
      * Default queue is non-blocking with size 4.
      */
-    Input inputDepth{*this, "inputDepth", Input::Type::SReceiver, false, 4, true, {{DatatypeEnum::ImgFrame, false}}};
+    Input inputDepth{*this, {"inputDepth", DEFAULT_GROUP, false, 4, {{{DatatypeEnum::ImgFrame, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
 
     /**
-     * Outputs SpatialLocationCalculatorData message that carries spatial location results.
+     * Outputs SpatialLocationCalculatorData message that carries spatial locations for each additional ROI that is specified in the config.
      */
-    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::SpatialLocationCalculatorData, false}}};
+    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::SpatialLocationCalculatorData, false}}}}};
+
+    /**
+     * Outputs SpatialImgDetections message that carries spatial locations along with original input data.
+     */
+    Output outputDetections{*this, {"outputDetections", DEFAULT_GROUP, {{DatatypeEnum::SpatialImgDetections, false}}}};
 
     /**
      * Passthrough message on which the calculation was performed.
      * Suitable for when input queue is set to non-blocking behavior.
      */
-    Output passthroughDepth{*this, "passthroughDepth", Output::Type::MSender, {{DatatypeEnum::ImgFrame, false}}};
-
-    // Functions to set properties
-    /**
-     * Specify whether or not wait until configuration message arrives to inputConfig Input.
-     * @param wait True to wait for configuration message, false otherwise.
-     */
-    [[deprecated("Use 'inputConfig.setWaitForMessage()' instead")]] void setWaitForConfigInput(bool wait);
+    Output passthroughDepth{*this, {"passthroughDepth", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
 
     /**
-     * @see setWaitForConfigInput
-     * @returns True if wait for inputConfig message, false otherwise
+     * Specify whether to run on host or device
+     * By default, the node will run on device.
      */
-    [[deprecated("Use 'inputConfig.setWaitForMessage()' instead")]] bool getWaitForConfigInput() const;
+    void setRunOnHost(bool runOnHost);
+
+    /**
+     * Check if the node is set to run on host
+     */
+    bool runOnHost() const override;
+
+    void run() override;
 };
 
 }  // namespace node

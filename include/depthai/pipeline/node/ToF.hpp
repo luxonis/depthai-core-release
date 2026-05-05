@@ -1,9 +1,15 @@
 #pragma once
 
-#include "depthai/pipeline/Node.hpp"
+#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/DeviceNodeGroup.hpp>
+#include <depthai/pipeline/Subnode.hpp>
+#include <depthai/pipeline/node/ImageFilters.hpp>
+
+// standard
+#include <fstream>
 
 // shared
-#include <depthai-shared/properties/ToFProperties.hpp>
+#include <depthai/properties/ToFProperties.hpp>
 
 #include "depthai/pipeline/datatype/ToFConfig.hpp"
 
@@ -11,69 +17,152 @@ namespace dai {
 namespace node {
 
 /**
- * @brief ToF node
+ * @brief ToFBase node.
+ * Performs feature tracking and reidentification using motion estimation between 2 consecutive frames.
  */
-class ToF : public NodeCRTP<Node, ToF, ToFProperties> {
+class ToFBase : public DeviceNodeCRTP<DeviceNode, ToFBase, ToFProperties> {
    public:
     constexpr static const char* NAME = "ToF";
+    using DeviceNodeCRTP::DeviceNodeCRTP;
 
    protected:
     Properties& getProperties();
 
-   private:
-    std::shared_ptr<RawToFConfig> rawConfig;
-
-    /**
-     * Constructs ToF node.
-     */
    public:
-    ToF(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
-    ToF(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
+    ToFBase() = default;
+    ToFBase(std::unique_ptr<Properties> props);
 
     /**
-     * Initial config to use for depth calculation.
+     * Initial config to use for feature tracking.
      */
-    ToFConfig initialConfig;
+    std::shared_ptr<ToFConfig> initialConfig = std::make_shared<ToFConfig>();
 
     /**
-     * Input ToF message with ability to modify parameters in runtime.
+     * Input ToFConfig message with ability to modify parameters in runtime.
      * Default queue is non-blocking with size 4.
      */
-    Input inputConfig{*this, "inputConfig", Input::Type::SReceiver, false, 4, {{DatatypeEnum::ToFConfig, false}}};
+    Input inputConfig{*this,
+                      {"inputConfig", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::ToFConfig, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+
+    Output depth{*this, {"depth", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+
+    Output amplitude{*this, {"amplitude", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, true}}}}};
+    Output intensity{*this, {"intensity", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, true}}}}};
+    Output phase{*this, {"phase", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, true}}}}};
 
     /**
-     * Input raw ToF data.
-     * Default queue is blocking with size 8.
+     * Build with a specific board socket
      */
-    Input input{*this, "input", Input::Type::SReceiver, true, 8, {{DatatypeEnum::ImgFrame, true}}};
+    std::shared_ptr<ToFBase> build(dai::CameraBoardSocket boardSocket = dai::CameraBoardSocket::AUTO,
+                                   dai::ImageFiltersPresetMode presetMode = dai::ImageFiltersPresetMode::TOF_MID_RANGE,
+                                   std::optional<float> fps = std::nullopt);
 
     /**
-     * Outputs ImgFrame message that carries decoded depth image.
+     * Set profile preset for ToFConfig
+     * @param presetMode Preset mode for ToFConfig
      */
-    Output depth{*this, "depth", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
-    /**
-     * Outputs ImgFrame message that carries amplitude image.
-     */
-    Output amplitude{*this, "amplitude", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
-    /**
-     * Outputs ImgFrame message that carries intensity image.
-     */
-    Output intensity{*this, "intensity", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
-    /**
-     * Outputs ImgFrame message that carries phase image, useful for debugging. float32 type.
-     */
-    Output phase{*this, "phase", Output::Type::MSender, {{DatatypeEnum::ImgFrame, true}}};
+    void setProfilePreset(dai::ImageFiltersPresetMode presetMode) {
+        initialConfig->setProfilePreset(presetMode);
+    }
 
     /**
-     * Specify number of shaves reserved for ToF decoding.
+     * Retrieves which board socket to use
+     * @returns Board socket to use
      */
-    ToF& setNumShaves(int numShaves);
+    CameraBoardSocket getBoardSocket() const;
+
+   private:
+    bool isBuilt = false;
+    uint32_t maxWidth = 0;
+    uint32_t maxHeight = 0;
+};
+
+class ToF : public DeviceNodeGroup {
+   public:
+    ToF(const std::shared_ptr<Device>& device)
+        : DeviceNodeGroup(device),
+          rawDepth{tofBase->depth},
+          depth{imageFilters->output},
+          amplitude{tofBase->amplitude},
+          intensity{tofBase->intensity},
+          phase{tofBase->phase},
+          tofBaseInputConfig{tofBase->inputConfig},
+          imageFiltersInputConfig{imageFilters->inputConfig},
+          tofBaseNode{*tofBase},
+          imageFiltersNode{*imageFilters} {}
+
+    ~ToF() override;
+
+    [[nodiscard]] static std::shared_ptr<ToF> create(const std::shared_ptr<Device>& device) {
+        auto tofPtr = std::make_shared<ToF>(device);
+        tofPtr->buildInternal();
+        return tofPtr;
+    }
+
+    void buildInternal() override {
+        // Build all subnodes, call their internal build functions
+        tofBase->buildInternal();
+        imageFilters->buildInternal();
+
+        // Link subnodes together
+        tofBase->depth.link(imageFilters->input);
+    }
+
+    std::shared_ptr<ToF> build(dai::CameraBoardSocket boardSocket = dai::CameraBoardSocket::AUTO,
+                               dai::ImageFiltersPresetMode presetMode = dai::ImageFiltersPresetMode::TOF_MID_RANGE,
+                               std::optional<float> fps = std::nullopt) {
+        tofBase->build(boardSocket, presetMode, fps);
+        imageFilters->build(presetMode);
+        return std::static_pointer_cast<ToF>(shared_from_this());
+    }
+
+    Subnode<ToFBase> tofBase{*this, "tofBase"};
+    Subnode<ImageFilters> imageFilters{*this, "imageFilters"};
 
     /**
-     * Specify number of frames in output pool
-     * @param numFramesPool Number of frames in output pool
+     * Raw depth output from ToF sensor
      */
-    ToF& setNumFramesPool(int numFramesPool);
+    Output& rawDepth;
+
+    /**
+     * Filtered depth output
+     */
+    Output& depth;
+
+    /**
+     * Amplitude output
+     */
+    Output& amplitude;
+
+    /**
+     * Intensity output
+     */
+    Output& intensity;
+
+    /**
+     * Phase output
+     */
+    Output& phase;
+
+    /**
+     * Input config for ToF base node
+     */
+    Input& tofBaseInputConfig;
+
+    /**
+     * Input config for image filters
+     */
+    Input& imageFiltersInputConfig;
+
+    /**
+     * ToF base node
+     */
+    ToFBase& tofBaseNode;
+
+    /**
+     * Image filters node
+     */
+    ImageFilters& imageFiltersNode;
 };
 
 }  // namespace node

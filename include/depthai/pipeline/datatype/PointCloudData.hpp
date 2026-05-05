@@ -3,15 +3,16 @@
 #include <unordered_map>
 #include <vector>
 
-#include "depthai-shared/common/Point3f.hpp"
-#include "depthai-shared/datatype/RawPointCloudData.hpp"
-#include "depthai/build/config.hpp"
+#include "depthai/common/ImgTransformations.hpp"
+#include "depthai/common/Point3f.hpp"
+#include "depthai/common/Point3fRGBA.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
+#include "depthai/utility/ProtoSerializable.hpp"
 
 // optional
 #ifdef DEPTHAI_HAVE_PCL_SUPPORT
+    #include <pcl/point_cloud.h>
     #include <pcl/point_types.h>
-    #include <pcl/visualization/cloud_viewer.h>
 #endif
 
 namespace dai {
@@ -19,10 +20,14 @@ namespace dai {
 /**
  * PointCloudData message. Carries point cloud data.
  */
-class PointCloudData : public Buffer {
-    std::shared_ptr<RawBuffer> serialize() const override;
-    RawPointCloudData& pcl;
-    std::vector<Point3f> points;
+class PointCloudData : public Buffer, public ProtoSerializable {
+    unsigned int width = 0;    // width in pixels (for organized) or number of points (for unorganized)
+    unsigned int height = 0;   // height in pixels (for organized) or 1 (for unorganized)
+    uint32_t instanceNum = 0;  // Which source created this frame
+    float minx = 0, miny = 0, minz = 0;
+    float maxx = 0, maxy = 0, maxz = 0;
+
+    bool color = false;
 
    public:
     using Buffer::getSequenceNum;
@@ -32,11 +37,13 @@ class PointCloudData : public Buffer {
     /**
      * Construct PointCloudData message.
      */
-    PointCloudData();
-    explicit PointCloudData(std::shared_ptr<RawPointCloudData> ptr);
-    virtual ~PointCloudData() = default;
+    PointCloudData() = default;
+    virtual ~PointCloudData();
 
-    std::vector<Point3f>& getPoints();
+    std::vector<Point3f> getPoints() const;
+    std::vector<Point3fRGBA> getPointsRGB() const;
+    void setPoints(const std::vector<Point3f>& points);
+    void setPointsRGB(const std::vector<Point3fRGBA>& points);
 
     /**
      * Retrieves instance number
@@ -85,33 +92,22 @@ class PointCloudData : public Buffer {
 
     /**
      * Retrieves whether point cloud is sparse
+     * @deprecated Use isOrganized() instead. Sparse means height == 1
      */
+    [[deprecated("isSparse is deprecated, use isOrganized() instead (isSparse == !isOrganized())")]]
     bool isSparse() const;
 
-    // setters
     /**
-     * Retrieves image timestamp related to dai::Clock::now()
+     * Retrieves whether point cloud is organized (height > 1)
+     * Organized point clouds have width x height structure from the original image
+     * Sparse point clouds have height == 1 and only contain valid points
      */
-    PointCloudData& setTimestamp(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> timestamp);
+    bool isOrganized() const;
 
     /**
-     * Sets image timestamp related to dai::Clock::now()
+     * Retrieves whether point cloud is color
      */
-    PointCloudData& setTimestampDevice(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> timestamp);
-
-    /**
-     * Instance number relates to the origin of the frame (which camera)
-     *
-     * @param instance Instance number
-     */
-    PointCloudData& setInstanceNum(unsigned int instance);
-
-    /**
-     * Specifies sequence number
-     *
-     * @param seq Sequence number
-     */
-    PointCloudData& setSequenceNum(int64_t seq);
+    bool isColor() const;
 
     /**
      * Specifies frame width
@@ -184,12 +180,73 @@ class PointCloudData : public Buffer {
      */
     PointCloudData& setMaxZ(float val);
 
+    /**
+     * Specifies whether point cloud is sparse
+     *
+     * @param val whether point cloud is sparse
+     * @deprecated This setter is deprecated and will be removed in a future release
+     */
+    [[deprecated("setSparse is deprecated, width and height are set automatically based on organization")]]
+    PointCloudData& setSparse(bool val);
+
+    /**
+     * Specifies whether point cloud is color
+     *
+     * @param val whether point cloud is color
+     */
+    PointCloudData& setColor(bool val);
+
+    /**
+     * Specifies instance number
+     *
+     * @param instanceNum instance number
+     */
+    PointCloudData& setInstanceNum(unsigned int instanceNum);
+
+    /**
+     * Retrieves image transformation data
+     */
+    const ImgTransformation& getTransformation() const;
+
+    /**
+     * Specifies image transformation data
+     *
+     * @param transformation transformation data
+     */
+    PointCloudData& setTransformation(const ImgTransformation& transformation);
+
+    /**
+     * Recomputes the bounding box (min/max X, Y, Z) from the current point data.
+     * All stored points are included regardless of their z value.
+     * If the cloud is empty, all bounds are set to 0.
+     */
+    PointCloudData& updateBoundingBox();
+
+#ifdef DEPTHAI_ENABLE_PROTOBUF
+    /**
+     * Serialize message to proto buffer
+     *
+     * @returns serialized message
+     */
+    std::vector<std::uint8_t> serializeProto(bool metadataOnly = false) const override;
+
+    /**
+     * Serialize schema to proto buffer
+     *
+     * @returns serialized schema
+     */
+    ProtoSerializable::SchemaPair serializeSchema() const override;
+#endif
+
 #ifdef DEPTHAI_HAVE_PCL_SUPPORT
     /**
      * Converts PointCloudData to pcl::PointCloud<pcl::PointXYZ>
      */
     pcl::PointCloud<pcl::PointXYZ>::Ptr getPclData() const;
-
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr getPclDataRGB() const;
+    void setPclData(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
+    void setPclData(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& cloud);
+    void setPclDataRGB(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& cloud);
 #else
     template <typename... T>
     struct dependent_false {
@@ -199,7 +256,33 @@ class PointCloudData : public Buffer {
     void getPclData() const {
         static_assert(dependent_false<T...>::value, "Library not configured with PCL support");
     }
+    template <typename... T>
+    void setPclData(T...) {
+        static_assert(dependent_false<T...>::value, "Library not configured with PCL support");
+    }
 #endif
+    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
+
+    DatatypeEnum getDatatype() const override {
+        return DatatypeEnum::PointCloudData;
+    }
+    ImgTransformation transformation;
+
+    DEPTHAI_SERIALIZE(PointCloudData,
+                      width,
+                      height,
+                      minx,
+                      miny,
+                      minz,
+                      maxx,
+                      maxy,
+                      maxz,
+                      instanceNum,
+                      color,
+                      transformation,
+                      Buffer::ts,
+                      Buffer::tsDevice,
+                      Buffer::sequenceNum);
 };
 
 }  // namespace dai
