@@ -19,7 +19,7 @@ void signalHandler(int signum) {
 int main(int argc, char** argv) {
     // Default port values
     int webSocketPort = 8765;
-    int httpPort = 8080;
+    int httpPort = 8082;
 
     // A simple argument parser
     for(int i = 1; i < argc; ++i) {
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     // Register a signal handler for Ctrl+C
     std::signal(SIGINT, signalHandler);
 
-    constexpr float FPS = 10.0f;
+    constexpr float FPS = 25.0f;
 
     try {
         // Create a remote connection for visualization

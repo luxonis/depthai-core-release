@@ -6,10 +6,29 @@ import numpy as np
 import time
 
 
+# Callback functions
+def uploadSuccessCallback(sendSnapResult):
+    assert (sendSnapResult.uploadStatus == dai.SendSnapCallbackStatus.SUCCESS)
+    print(f"Successfully uploaded Snap: ({sendSnapResult.snapName}, {sendSnapResult.snapTimestamp}, {sendSnapResult.snapHubID}) to the hub.")
+
+def uploadFailureCallback(sendSnapResult):
+    assert (sendSnapResult.uploadStatus != dai.SendSnapCallbackStatus.SUCCESS)
+    print(f"Upload of Snap: ({sendSnapResult.snapName}, {sendSnapResult.snapTimestamp}, {sendSnapResult.snapLocalID}) to the hub has failed.")
+
+    status = sendSnapResult.uploadStatus
+    if status == dai.SendSnapCallbackStatus.FILE_BATCH_PREPARATION_FAILED:
+        print("File batch preparation failed!")
+    elif status == dai.SendSnapCallbackStatus.GROUP_CONTAINS_REJECTED_FILES:
+        print("Snap's file group contains rejected files!")
+    elif status == dai.SendSnapCallbackStatus.FILE_UPLOAD_FAILED:
+        print("File upload was unsuccessful!")
+    elif status == dai.SendSnapCallbackStatus.SEND_EVENT_FAILED:
+        print("Snap could not be sent to the hub, following successful file upload!")
+
 # Create pipeline
 with dai.Pipeline() as pipeline:
-    # Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or use the EventsManager setToken() method.
-    eventMan = dai.EventsManager()
+    # Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or pass the key when creating the EventsManager instance.
+    eventMan = dai.EventsManager("")
 
     cameraNode = pipeline.create(dai.node.Camera).build()
     detectionNetwork = pipeline.create(dai.node.DetectionNetwork).build(cameraNode, dai.NNModelDescription("yolov6-nano"))
@@ -29,8 +48,10 @@ with dai.Pipeline() as pipeline:
         return (np.clip(np.array(bbox), 0, 1) * normVals).astype(int)
 
 
+    print("Press 's' to send a snap, and 'q' to quit")
     while pipeline.isRunning():
-        if cv2.waitKey(1) != -1:
+        key = cv2.waitKey(1)
+        if key == ord("q"):
             pipeline.stop()
             break
 
@@ -69,5 +90,17 @@ with dai.Pipeline() as pipeline:
             cv2.imshow("rgb", frame)
 
         # Trigger sendSnap()
-        if cv2.waitKey(1) == ord("s"):
-            eventMan.sendSnap("ImageDetection", None, inRgb, inDet, ["EventsExample", "Python"], {"key_0" : "value_0", "key_1" : "value_1"})
+        if key == ord("s"):
+            localSnapID = eventMan.sendSnap("ImageDetection", None, inRgb, inDet, ["EventsExample", "Python"], {"key_0" : "value_0", "key_1" : "value_1"}, 
+                              uploadSuccessCallback, uploadFailureCallback)
+            if localSnapID != None:
+                print(f"Snap with a localID: {localSnapID} has been successfully added to the EventsManager")
+            else:
+                print("Snap was not successfully added to the EventsManager")
+
+    cv2.destroyAllWindows()
+    # Wait for pending snaps to be uploaded
+    if eventMan.waitForPendingUploads(timeoutMs=10000):
+        print("Pending uploads have been successfully uploaded")
+    else:
+        print("Pending uploads were discarded due to timeout (10s) or dropped connection")

@@ -4,6 +4,7 @@
 #include "basalt/calibration/calibration.hpp"
 #include "basalt/serialization/headers_serialization.h"
 #include "basalt/spline/se3_spline.h"
+#include "basalt/utils/common_types.h"
 #include "basalt/utils/vio_config.h"
 #include "basalt/vi_estimator/vio_estimator.h"
 #include "depthai/pipeline/Pipeline.hpp"
@@ -51,7 +52,7 @@ void BasaltVIO::buildInternal() {
     R << 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0;
     Eigen::Quaterniond q(R);
     basalt::PoseState<double>::SE3 initialRotation(q, Eigen::Vector3d(0, 0, 0));
-    // to output pose in FLU world coordinates
+    // Keep Basalt output in FLU world coordinates.
     pimpl->localTransform = std::make_shared<basalt::PoseState<double>::SE3>(initTrans * initialRotation.inverse());
     setDefaultVIOConfig();
 }
@@ -69,19 +70,20 @@ void BasaltVIO::run() {
     Eigen::Quaterniond q(R);
     basalt::PoseState<double>::SE3 opticalTransform(q, Eigen::Vector3d(0, 0, 0));
 
-    while(isRunning()) {
+    while(mainLoop()) {
         if(!initialized) continue;
         pimpl->outStateQueue->pop(data);
 
         if(!data.get()) continue;
         basalt::PoseState<double>::SE3 pose = (*pimpl->localTransform * data->T_w_i * pimpl->calib->T_i_c[0]);
 
-        // pose is in RDF orientation, convert to FLU
+        // Basalt pose is RDF; convert to FLU for API output.
         auto finalPose = pose * opticalTransform.inverse();
         auto trans = finalPose.translation();
         auto rot = finalPose.unit_quaternion();
         auto out = std::make_shared<TransformData>(trans.x(), trans.y(), trans.z(), rot.x(), rot.y(), rot.z(), rot.w());
         transform.send(out);
+        std::lock_guard<std::mutex> lck(imgMtx);
         passthrough.send(leftImg);
     }
 }
@@ -102,6 +104,7 @@ void BasaltVIO::stereoCB(std::shared_ptr<ADatatype> in) {
     for(auto& msg : *group) {
         std::shared_ptr<ImgFrame> imgFrame = std::dynamic_pointer_cast<ImgFrame>(msg.second);
         if(i == 0) {
+            std::lock_guard<std::mutex> lck(imgMtx);
             leftImg = imgFrame;
         };
         auto t = imgFrame->getTimestamp();
@@ -130,6 +133,9 @@ void BasaltVIO::stereoCB(std::shared_ptr<ADatatype> in) {
 
 void BasaltVIO::imuCB(std::shared_ptr<ADatatype> imuData) {
     auto imuPackets = std::dynamic_pointer_cast<IMUData>(imuData);
+    if(!imuPackets) {
+        return;
+    }
 
     for(auto& imuPacket : imuPackets->packets) {
         basalt::ImuData<double>::Ptr data;
@@ -166,7 +172,6 @@ void BasaltVIO::setAccelNoiseStd(const std::vector<double>& accelNoiseStd) {
         throw std::invalid_argument("Accelerometer noise vector must have 3 elements.");
     }
     this->accelNoiseStd = accelNoiseStd;
-    ;
 }
 
 void BasaltVIO::setGyroNoiseStd(const std::vector<double>& gyroNoiseStd) {
@@ -178,9 +183,8 @@ void BasaltVIO::setGyroNoiseStd(const std::vector<double>& gyroNoiseStd) {
 
 void BasaltVIO::setGyroBias(const std::vector<double>& gyroBias) {
     if(gyroBias.size() != 12) {
-        throw std::invalid_argument("Gyroscope bias vector must have 9 elements.");
+        throw std::invalid_argument("Gyroscope bias vector must have 12 elements.");
     }
-
     this->gyroBias = gyroBias;
 }
 
@@ -212,14 +216,14 @@ void BasaltVIO::initialize(std::vector<std::shared_ptr<ImgFrame>> frames) {
             basalt::Calibration<Scalar>::SE3 T_i_c(q, trans);
             pimpl->calib->T_i_c.push_back(T_i_c);
         } else {
-            std::vector<std::vector<float>> imuExtr = calibHandler.getCameraToImuExtrinsics(camID, useSpecTranslation);
+            std::vector<std::vector<float>> imuExtr = calibHandler.getCameraToImuExtrinsics(camID, useSpecTranslation, LengthUnit::METER);
 
             Eigen::Matrix<Scalar, 3, 3> R;
             R << double(imuExtr[0][0]), double(imuExtr[0][1]), double(imuExtr[0][2]), double(imuExtr[1][0]), double(imuExtr[1][1]), double(imuExtr[1][2]),
                 double(imuExtr[2][0]), double(imuExtr[2][1]), double(imuExtr[2][2]);
             Eigen::Quaterniond q(R);
 
-            Eigen::Vector3d trans(double(imuExtr[0][3]) * 0.01, double(imuExtr[1][3]) * 0.01, double(imuExtr[2][3]) * 0.01);
+            Eigen::Vector3d trans{double(imuExtr[0][3]), double(imuExtr[1][3]), double(imuExtr[2][3])};
             basalt::Calibration<Scalar>::SE3 T_i_c(q, trans);
             pimpl->calib->T_i_c.push_back(T_i_c);
         }
@@ -311,6 +315,72 @@ void BasaltVIO::initialize(std::vector<std::shared_ptr<ImgFrame>> frames) {
 }
 void BasaltVIO::runSyncOnHost(bool runOnHost) {
     sync->setRunOnHost(runOnHost);
+}
+void BasaltVIO::setConfig(const BasaltVIO::VioConfig& config) {
+    pimpl->vioConfig.optical_flow_type = config.optical_flow_type;
+    pimpl->vioConfig.optical_flow_detection_grid_size = config.optical_flow_detection_grid_size;
+    pimpl->vioConfig.optical_flow_detection_num_points_cell = config.optical_flow_detection_num_points_cell;
+    pimpl->vioConfig.optical_flow_detection_min_threshold = config.optical_flow_detection_min_threshold;
+    pimpl->vioConfig.optical_flow_detection_max_threshold = config.optical_flow_detection_max_threshold;
+    pimpl->vioConfig.optical_flow_detection_nonoverlap = config.optical_flow_detection_nonoverlap;
+    pimpl->vioConfig.optical_flow_max_recovered_dist2 = config.optical_flow_max_recovered_dist2;
+    pimpl->vioConfig.optical_flow_pattern = config.optical_flow_pattern;
+    pimpl->vioConfig.optical_flow_max_iterations = config.optical_flow_max_iterations;
+    pimpl->vioConfig.optical_flow_epipolar_error = config.optical_flow_epipolar_error;
+    pimpl->vioConfig.optical_flow_levels = config.optical_flow_levels;
+    pimpl->vioConfig.optical_flow_skip_frames = config.optical_flow_skip_frames;
+    pimpl->vioConfig.optical_flow_matching_guess_type = static_cast<basalt::MatchingGuessType>(config.optical_flow_matching_guess_type);
+    pimpl->vioConfig.optical_flow_matching_default_depth = config.optical_flow_matching_default_depth;
+    pimpl->vioConfig.optical_flow_image_safe_radius = config.optical_flow_image_safe_radius;
+    pimpl->vioConfig.optical_flow_recall_enable = config.optical_flow_recall_enable;
+    pimpl->vioConfig.optical_flow_recall_all_cams = config.optical_flow_recall_all_cams;
+    pimpl->vioConfig.optical_flow_recall_num_points_cell = config.optical_flow_recall_num_points_cell;
+    pimpl->vioConfig.optical_flow_recall_over_tracking = config.optical_flow_recall_over_tracking;
+    pimpl->vioConfig.optical_flow_recall_update_patch_viewpoint = config.optical_flow_recall_update_patch_viewpoint;
+    pimpl->vioConfig.optical_flow_recall_max_patch_dist = config.optical_flow_recall_max_patch_dist;
+    pimpl->vioConfig.optical_flow_recall_max_patch_norms = config.optical_flow_recall_max_patch_norms;
+    pimpl->vioConfig.vio_linearization_type = static_cast<basalt::LinearizationType>(config.vio_linearization_type);
+    pimpl->vioConfig.vio_sqrt_marg = config.vio_sqrt_marg;
+    pimpl->vioConfig.vio_max_states = config.vio_max_states;
+    pimpl->vioConfig.vio_max_kfs = config.vio_max_kfs;
+    pimpl->vioConfig.vio_min_frames_after_kf = config.vio_min_frames_after_kf;
+    pimpl->vioConfig.vio_new_kf_keypoints_thresh = config.vio_new_kf_keypoints_thresh;
+    pimpl->vioConfig.vio_debug = config.vio_debug;
+    pimpl->vioConfig.vio_extended_logging = config.vio_extended_logging;
+    pimpl->vioConfig.vio_obs_std_dev = config.vio_obs_std_dev;
+    pimpl->vioConfig.vio_obs_huber_thresh = config.vio_obs_huber_thresh;
+    pimpl->vioConfig.vio_min_triangulation_dist = config.vio_min_triangulation_dist;
+    pimpl->vioConfig.vio_max_iterations = config.vio_max_iterations;
+    pimpl->vioConfig.vio_enforce_realtime = config.vio_enforce_realtime;
+    pimpl->vioConfig.vio_use_lm = config.vio_use_lm;
+    pimpl->vioConfig.vio_lm_lambda_initial = config.vio_lm_lambda_initial;
+    pimpl->vioConfig.vio_lm_lambda_min = config.vio_lm_lambda_min;
+    pimpl->vioConfig.vio_lm_lambda_max = config.vio_lm_lambda_max;
+    pimpl->vioConfig.vio_scale_jacobian = config.vio_scale_jacobian;
+    pimpl->vioConfig.vio_init_pose_weight = config.vio_init_pose_weight;
+    pimpl->vioConfig.vio_init_ba_weight = config.vio_init_ba_weight;
+    pimpl->vioConfig.vio_init_bg_weight = config.vio_init_bg_weight;
+    pimpl->vioConfig.vio_marg_lost_landmarks = config.vio_marg_lost_landmarks;
+    pimpl->vioConfig.vio_fix_long_term_keyframes = config.vio_fix_long_term_keyframes;
+    pimpl->vioConfig.vio_kf_marg_feature_ratio = config.vio_kf_marg_feature_ratio;
+    pimpl->vioConfig.vio_kf_marg_criteria = static_cast<basalt::KeyframeMargCriteria>(config.vio_kf_marg_criteria);
+    pimpl->vioConfig.mapper_obs_std_dev = config.mapper_obs_std_dev;
+    pimpl->vioConfig.mapper_obs_huber_thresh = config.mapper_obs_huber_thresh;
+    pimpl->vioConfig.mapper_detection_num_points = config.mapper_detection_num_points;
+    pimpl->vioConfig.mapper_num_frames_to_match = config.mapper_num_frames_to_match;
+    pimpl->vioConfig.mapper_frames_to_match_threshold = config.mapper_frames_to_match_threshold;
+    pimpl->vioConfig.mapper_min_matches = config.mapper_min_matches;
+    pimpl->vioConfig.mapper_ransac_threshold = config.mapper_ransac_threshold;
+    pimpl->vioConfig.mapper_min_track_length = config.mapper_min_track_length;
+    pimpl->vioConfig.mapper_max_hamming_distance = config.mapper_max_hamming_distance;
+    pimpl->vioConfig.mapper_second_best_test_ratio = config.mapper_second_best_test_ratio;
+    pimpl->vioConfig.mapper_bow_num_bits = config.mapper_bow_num_bits;
+    pimpl->vioConfig.mapper_min_triangulation_dist = config.mapper_min_triangulation_dist;
+    pimpl->vioConfig.mapper_no_factor_weights = config.mapper_no_factor_weights;
+    pimpl->vioConfig.mapper_use_factors = config.mapper_use_factors;
+    pimpl->vioConfig.mapper_use_lm = config.mapper_use_lm;
+    pimpl->vioConfig.mapper_lm_lambda_min = config.mapper_lm_lambda_min;
+    pimpl->vioConfig.mapper_lm_lambda_max = config.mapper_lm_lambda_max;
 }
 void BasaltVIO::setDefaultVIOConfig() {
     pimpl->vioConfig.optical_flow_type = "frame_to_frame";

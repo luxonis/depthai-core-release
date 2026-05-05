@@ -2,6 +2,170 @@
 Changelog for package depthai
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+3.6.1 (2026-05-04)
+------------------
+## Features
+* **AutoCalibration** is now turned on by default and can be turned off with `DEPTHAI_AUTOCALIBRATION=OFF`.
+* Add support for **IMU calibration** and unify outputs with each sensor now having `RAW`, `UNCALIBRATED`, and `CALIBRATED` outputs.
+    * Important: `RAW` used to be pre-rotated to the RDF coordinate system, but is now captured directly from the IMU. To keep the previous behavior, switch to the `UNCALIBRATED` output.
+* Add **Extrinsics** tracking to **ImgTransformations**, along with utilities to remap/project points between images.
+    * Each message tracks rotation and translation to the camera socket with the lowest index, for example `CAM_A`.
+    * C++ example `examples/cpp/Remapping/point_remapping.cpp` and Python example `examples/python/Remapping/point_remapping.py`.
+* Add **YOLO26** support to **DetectionParser**.
+* Add support for new **NeuralDepth** models.
+    * Existing model FPS improvements:
+        * **LARGE (768x480)** from 10 FPS to 22 FPS.
+        * **MEDIUM (576x360)** from 26 FPS to 38 FPS.
+        * **SMALL (480x300)** from 42 FPS to 56 FPS.
+        * **NANO (384x240)** from 60 FPS to 85 FPS.
+    * New models:
+        * **1248x780** at 8.5 FPS.
+        * **1056x660** at 12.5 FPS.
+        * **960x600** at 14 FPS.
+        * **864x540** at 18 FPS.
+    * LuxonisOS 1.30.1 or newer is required.
+* Add a new **PointCloud** node with support to select a custom coordinate system.
+    * C++ examples in `examples/cpp/PointCloud` and Python examples in `examples/python/PointCloud`.
+* Improve **Holistic record & replay** support.
+    * Record and replay device calibration.
+    * Record and mock device capabilities, including `device.getConnectedCameraFeatures()` and `device.getConnectedIMU()`.
+    * Auto-sync recordings for more robust stream playback when streams need to be synced.
+    * Use `DEPTHAI_REPLAY={path to recording}` for replay without changing the script.
+* Update **Embedded Visualizer** to 2.3.3.
+    * Improved pipeline debugging pane.
+    * Small UI fixes.
+    * Improved device connection stability.
+* Improve automatic **Camera sensor config selection and FPS selection**.
+    * Fall back to cropped configs when a full-resolution config cannot satisfy requested outputs.
+    * Automatically put cameras that cannot be FSynced with other cameras into free-running mode.
+    * Correctly track intrinsics for cropped sensor configs.
+    * On **RVC4**, LuxonisOS 1.31 or newer is required.
+* Improve **ObjectTracker** with optional association in 3D and add velocity property to `dai.Tracklet`.
+* **[RVC4]** Add support for **PTP** in Camera syncing on RVC4.
+    * LuxonisOS 1.30.1 or newer is required.
+    * Supported on **IMX586** and **OG05** sensors.
+    * C++ example `examples/cpp/Remapping/point_remapping.cpp` and Python example `examples/python/Misc/MultiDevice/multi_device_frame_sync.py`.
+
+## Misc
+* Add `LEFT` and `RIGHT` alignment to **StereoDepth** and correctly respect `RECTIFIED_LEFT` and `RECTIFIED_RIGHT` on RVC4.
+* **[RVC2]** Add support for **IMX380**.
+* **[RVC4]** Use `SNPE 2.41.0.251128` if available for **NeuralNetwork** engine.
+* Automatically switch **DetectionParser** to run on host on RVC2 when the model contains a segmentation mask.
+* Add support for `MessageDemux` to run on host.
+* Add ROS Kilted packaging support and build dynamic calibration in the ROS package.
+
+## [RVC4] Luxonis OS compatibility
+* Integration tested on Luxonis OS **1.20.5, 1.27.1 and 1.30.1**.
+
+3.5.0 (2026-03-18)
+------------------
+## Features
+* Add **AutoCalibration** node which automatically performs dynamic calibration.
+    * It can be turned on implicitly by setting `DEPTHAI_AUTOCALIBRATION=ON_START` or `DEPTHAI_AUTOCALIBRATION=CONTINUOUS`.
+    * It can also be used explicitly; see `examples/cpp/AutoCalibration/auto_calibration_example.cpp` and `examples/python/AutoCalibration/auto_calibration_example.py`.
+* Merge v2.32.0, including RVC2 crashdump collection improvements and device state retrieval.
+    * Add `device.getState`, which returns the firmware state of the device at runtime.
+    * Add `setProcessor` to select the processor for `Sync` and `Demux` nodes.
+    * Expand crashdump data in firmware with more context on what caused the crash.
+* Include v2.31.1 fixes for a hard-to-hit `MessageGroup` cache coherency bug.
+
+## Misc
+* Set tracked undistortion coefficients on legacy calibration to 0 when undistortion is turned on.
+* Add `eventManager.waitForPendingUploads()` to avoid losing Snaps and Events waiting in the queue at script exit.
+* Expand the stability test to include `NeuralAssistedStereo`, `FeatureTracker`, and `ObjectTracker`.
+
+## [RVC4] Luxonis OS compatibility
+* Integration tested on Luxonis OS 1.14.1, 1.20.5 and 1.27.1.
+
+3.4.0 (2026-03-09)
+------------------
+## Features
+* Add support for **semantic segmentation**.
+    * C++ example `examples/cpp/Segmentation/semantic_segmentation.cpp` and Python example `examples/python/Segmentation/semantic_segmentation.py`.
+* Add support for ingesting **instance segmentation** in **SpatialLocationCalculator** to improve 3D detections.
+    * C++ example `examples/cpp/SpatialLocationCalculator/spatial_segmentation.cpp` and Python example `examples/python/SpatialLocationCalculator/spatial_segmentation.py`.
+* Add support for spatializing keypoints into 3D.
+    * Python example `examples/python/SpatialLocationCalculator/spatial_keypoints.py`.
+* **[RVC4]** Add support for **USB protocol**.
+    * Requires LuxonisOS 1.27.1 or newer.
+    * It can be forced with `DEPTHAI_PROTOCOL=usb`.
+* Add `isp` output to **Camera** node.
+    * C++ example `examples/cpp/Camera/camera_isp.cpp` and Python example `examples/python/Camera/camera_isp.py`.
+* Add **Gate** node to open and close a message stream at runtime.
+    * C++ example `examples/cpp/Gate/gate_example.cpp` and Python example `examples/python/Gate/gate_example.py`.
+* **[RVC4]** Add support for **HFR (High frame rate)** on IMX586:
+    * 1280x720 at 480 FPS.
+    * 1920x1080 at 240 FPS.
+    * Examples in `examples/cpp/HFR` and `examples/python/HFR`.
+* Add support for **XLink packetization**.
+    * Optionally packetize messages sent through XLink and limit the bitrate per connection.
+    * Useful in advanced scenarios to allow streams with large messages to run in the background.
+* Update **Visualizer** to 2.0.10.
+    * Support live pipeline visualization when `DEPTHAI_PIPELINE_DEBUGGING=ON` is set.
+    * Visualize keypoints when showing `ImgDetections`.
+    * Automatically remap detections and annotations to the target stream.
+* Add a new `CalibrationMetrics` output to **DynamicCalibration** node.
+* Add support for a callback for **Snaps & Events** to get notified when an event is sent to Hub.
+* **[RVC4]** Add support for **external FSync**.
+    * C++ example `examples/cpp/Misc/MultiDevice/multi_device_external_frame_sync.cpp` and Python example `examples/python/Misc/MultiDevice/multi_device_external_frame_sync.py`.
+* **[RVC2]** Add support for setting custom sensor tuning per sensor.
+* **[RVC2]** Add support for setting sensor orientation in the **Camera** node.
+
+## Bug fixes
+* Fix ownership when `dai::Pipeline` is copy-assigned to another variable.
+* Fix replay for StereoDepth when `ImgTransformations` are not set.
+
+## Misc
+* Deprecate creating nodes without `pipeline.create`.
+* Make basalt a private dependency instead of public.
+* **ImageAlign**:
+    * Warn if a distorted image is sent to `ImageAlign`'s `alignTo`.
+    * Use `ImgTransformations` to get intrinsics and distortion coefficients instead of relying on heuristics and global calibration.
+* **[RVC4]** Add support for RVC4 devices to DeviceManager.
+* **[RVC2]** Add new fields to ImgDetections inside `Script` node bindings.
+
+## [RVC4] Luxonis OS compatibility
+* Integration tested on Luxonis OS 1.14.1, 1.20.5 and 1.27.1.
+
+3.3.0 (2026-01-15)
+------------------
+## Features
+* Add **Pipeline Debugging** support.
+    * More details can be found in `PipelineDebugging.md`.
+    * The pipeline graph can be visualized with `depthai_pipeline_graph`.
+    * Examples in `examples/cpp/Misc/PipelineDebugging` and `examples/python/Misc/PipelineDebugging`.
+* Add **NeuralAssistedStereo** node for classical stereo and neural depth fusion.
+    * Uses **VPP** internally to fuse classical stereo depth with neural depth.
+    * Examples in `examples/cpp/NeuralAssistedStereo` and `examples/python/NeuralAssistedStereo`.
+* Add **VPP** node and configuration API.
+    * Examples in `examples/cpp/Vpp` and `examples/python/Vpp`.
+* Expose **XLinkBridges** for advanced configuration of implicit XLink bridges created when crossing the host-device boundary.
+    * C++ example `examples/cpp/Misc/XLinkBridge` and Python example `examples/python/Misc/XLinkBridge`.
+* Add **Housing calibration** support in `CalibrationHandler`.
+* **[RVC4]** Add **SystemLogger** node and expanded SystemInformation metrics.
+    * Examples in `examples/cpp/Misc/SystemLogger` and `examples/python/Misc/SystemLogger`.
+* **[RVC4]** Update `StereoDepth` presets on RVC4 with improved quality/fillrate trade-offs.
+
+## Misc
+* Add binary services support to `RemoteConnection` and configurable callback thread count.
+* Add resize mode to build method in `NeuralNetwork`, `DetectionNetwork`, and `SpatialDetectionNetwork` nodes.
+* Add support for more frame types in `ImgFrame.setCvFrame()`.
+* **[RVC4]** Add support for manual white balance.
+* **[RVC4]** Turn off dot projectors on pipeline stop.
+* **[RVC4]** Add temporal filter to NeuralDepth node.
+
+## Bug fixes and stability
+* Fix SSD parser regression and add `labelName` support in keypoints/detections.
+* Fix file corruption when recording long videos with H264 encoding with `Record` node.
+* **[RVC4]** Turn off Nagle's algorithm to avoid latency spikes on Windows.
+* **[RVC4]** Fix a race condition in StereoDepth node changing the left and right input frames.
+* **[RVC4]** Fix camera mapping for custom RVC4 boards.
+* **[RVC2]** Fix an edge case for MessageGroup cache coherency.
+* **[RVC2]** Remove false alarm warning in SpatialDetectionNetwork when input image was rotated.
+
+## [RVC4] Luxonis OS compatibility
+* Integration tested on Luxonis OS 1.14.1, 1.18.3 and 1.23.1.
+
 3.2.1 (2025-12-01)
 ------------------
 ## Bug fixes
@@ -61,7 +225,7 @@ On the LuxonisOS 1.20.5 and newer, up to 240 FPS is now supported
 * `DynamicCalibration` input control now has a shorter API to send commands to the node
 * Add intrinsics metadata to thermal frames
 * Update the examples using `StereoDepth` node with removing the explicit `NV12` type request for better performance
-* Improve IMX678 support on RVC2 with better black level correction, improving brightness and color accuracy 
+* Improve IMX678 support on RVC2 with better black level correction, improving brightness and color accuracy
 * [Python bindings] Add explicit `numpy` requirement to the Python wheels
 * [Python bindings] Add missing bindings to set the filter order on the `StereoDepth` node
 
@@ -95,7 +259,7 @@ We've revisited some of the most fundamental nodes to make them more powerful an
 DepthAI v3 introduces new high-level nodes to simplify working with high level concepts (RGBD pointclouds, SLAM)
 
 *   **RGBD**: This node makes it easy to work with synchronized and aligned color and depth data. It features an "autocreate" mode that automatically constructs the required input pipeline, delivering a ready-to-use RGBD message or a colored point cloud.
-     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RGBD) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RGBD) examples. 
+     * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RGBD) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RGBD) examples.
 *   **VSLAM**: We've added SLAM and VIO as host nodes, enabling advanced spatial AI applications. These are currently available on Linux and macOS and are in early preview.
      * [Python](https://github.com/luxonis/depthai-core/tree/main/examples/python/RVC2/VSLAM) and [C++](https://github.com/luxonis/depthai-core/tree/main/examples/cpp/RVC2/VSLAM) examples.
 
@@ -298,7 +462,7 @@ Features
 
 2.21.0 (2023-04-03)
 -------------------
-* Improved x/y accuracy for SpatialLocationCalculator/SpatialDetectionNetwork 
+* Improved x/y accuracy for SpatialLocationCalculator/SpatialDetectionNetwork
 * Support for median and mode, default changed to median in SpatialLocationCalculator/SpatialDetectionNetwork
 * Multi stereo support, ability to run stereo between any 2 calibrated cameras
 * Support for LEFT/RIGHT alignment in stereo node

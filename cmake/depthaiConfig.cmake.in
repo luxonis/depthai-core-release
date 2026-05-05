@@ -13,7 +13,6 @@ if(DEPTHAI_OPENCV_SUPPORT)
     find_dependency(OpenCV 4 CONFIG REQUIRED)
 endif()
 
-
 if(DEPTHAI_PCL_SUPPORT)
     find_dependency(PCL CONFIG REQUIRED)
 endif()

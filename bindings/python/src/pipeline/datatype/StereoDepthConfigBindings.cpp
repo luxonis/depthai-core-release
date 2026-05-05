@@ -62,25 +62,20 @@ void bind_stereodepthconfig(pybind11::module& m, void* pCallstack) {
     ///////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////
 
-    depthAlign
+    depthAlign.value("AUTO", StereoDepthConfig::AlgorithmControl::DepthAlign::AUTO)
         .value("RECTIFIED_RIGHT",
                StereoDepthConfig::AlgorithmControl::DepthAlign::RECTIFIED_RIGHT,
                DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, RECTIFIED_RIGHT))
         .value("RECTIFIED_LEFT",
                StereoDepthConfig::AlgorithmControl::DepthAlign::RECTIFIED_LEFT,
                DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, RECTIFIED_LEFT))
-        .value("CENTER", StereoDepthConfig::AlgorithmControl::DepthAlign::CENTER, DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, CENTER));
+        .value("CENTER", StereoDepthConfig::AlgorithmControl::DepthAlign::CENTER, DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, CENTER))
+        .value("RIGHT", StereoDepthConfig::AlgorithmControl::DepthAlign::RIGHT)
+        .value("LEFT", StereoDepthConfig::AlgorithmControl::DepthAlign::LEFT);
 
     // m.attr("StereoDepthProperties").attr("DepthAlign") = depthAlign;
 
     algorithmControl.attr("DepthUnit") = m.attr("DepthUnit");
-
-    filterEnum.value("NONE", StereoDepthConfig::PostProcessing::Filter::NONE, DOC(dai, StereoDepthConfig, PostProcessing, Filter, NONE))
-        .value("DECIMATION", StereoDepthConfig::PostProcessing::Filter::DECIMATION, DOC(dai, StereoDepthConfig, PostProcessing, Filter, DECIMATION))
-        .value("SPECKLE", StereoDepthConfig::PostProcessing::Filter::SPECKLE, DOC(dai, StereoDepthConfig, PostProcessing, Filter, SPECKLE))
-        .value("MEDIAN", StereoDepthConfig::PostProcessing::Filter::MEDIAN, DOC(dai, StereoDepthConfig, PostProcessing, Filter, MEDIAN))
-        .value("SPATIAL", StereoDepthConfig::PostProcessing::Filter::SPATIAL, DOC(dai, StereoDepthConfig, PostProcessing, Filter, SPATIAL))
-        .value("TEMPORAL", StereoDepthConfig::PostProcessing::Filter::TEMPORAL, DOC(dai, StereoDepthConfig, PostProcessing, Filter, TEMPORAL));
 
     filterEnum.value("NONE", StereoDepthConfig::PostProcessing::Filter::NONE, DOC(dai, StereoDepthConfig, PostProcessing, Filter, NONE))
         .value("DECIMATION", StereoDepthConfig::PostProcessing::Filter::DECIMATION, DOC(dai, StereoDepthConfig, PostProcessing, Filter, DECIMATION))
@@ -351,6 +346,7 @@ void bind_stereodepthconfig(pybind11::module& m, void* pCallstack) {
         .def("getFiltersComputeBackend", &StereoDepthConfig::getFiltersComputeBackend, DOC(dai, StereoDepthConfig, getFiltersComputeBackend));
     m.attr("StereoDepthConfig").attr("AlgorithmControl") = algorithmControl;
     m.attr("StereoDepthConfig").attr("PostProcessing") = postProcessing;
+    m.attr("StereoDepthConfig").attr("PostProcessing").attr("Filter") = filterEnum;
     m.attr("StereoDepthConfig").attr("CensusTransform") = censusTransform;
     m.attr("StereoDepthConfig").attr("CostMatching") = costMatching;
     m.attr("StereoDepthConfig").attr("CostAggregation") = costAggregation;
