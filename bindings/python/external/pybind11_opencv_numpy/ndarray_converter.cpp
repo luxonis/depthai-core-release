@@ -123,6 +123,7 @@ cv::UMatData *NumpyAllocator::allocate(int dims0, const int *sizes, int type, vo
                                          : depth == CV_16S  ? NPY_SHORT
                                          : depth == CV_32S  ? NPY_INT
                                          : depth == CV_32F  ? NPY_FLOAT
+                                         : depth == CV_16F  ? NPY_FLOAT16
                                          : depth == CV_64F  ? NPY_DOUBLE
                                                             : f * NPY_ULONGLONG + (f ^ 1) * NPY_UINT;
   int i, dims = dims0;
@@ -214,14 +215,16 @@ bool NDArrayConverter::toMat(PyObject *o, Mat &m) {
 
   bool needcopy = false, needcast = false;
   int typenum = PyArray_TYPE(oarr), new_typenum = typenum;
-  int type = typenum == NPY_UBYTE ? CV_8U : typenum == NPY_BYTE ? CV_8S
-                                        : typenum == NPY_USHORT ? CV_16U
-                                        : typenum == NPY_SHORT  ? CV_16S
-                                        : typenum == NPY_INT    ? CV_32S
-                                        : typenum == NPY_INT32  ? CV_32S
-                                        : typenum == NPY_FLOAT  ? CV_32F
-                                        : typenum == NPY_DOUBLE ? CV_64F
-                                                                : -1;
+  int type = typenum == NPY_UBYTE ? CV_8U : typenum == NPY_BYTE  ? CV_8S
+                                        : typenum == NPY_USHORT  ? CV_16U
+                                        : typenum == NPY_SHORT   ? CV_16S
+                                        : typenum == NPY_INT     ? CV_32S
+                                        : typenum == NPY_INT32   ? CV_32S
+                                        : typenum == NPY_UINT32  ? CV_32S
+                                        : typenum == NPY_FLOAT   ? CV_32F
+                                        : typenum == NPY_FLOAT16 ? CV_16F
+                                        : typenum == NPY_DOUBLE  ? CV_64F
+                                                                 : -1;
 
   if (type < 0) {
     if (typenum == NPY_INT64 || typenum == NPY_UINT64 || typenum == NPY_LONG) {
