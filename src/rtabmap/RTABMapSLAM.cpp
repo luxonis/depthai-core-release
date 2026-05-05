@@ -1,8 +1,8 @@
 #include "depthai/rtabmap/RTABMapSLAM.hpp"
 
 #include "../utility/PimplImpl.hpp"
+#include "RTABMapConversions.hpp"
 #include "depthai/pipeline/Pipeline.hpp"
-#include "depthai/rtabmap/RTABMapConversions.hpp"
 #include "pcl/filters/filter.h"
 #include "pcl/point_cloud.h"
 #include "pipeline/ThreadedNodeImpl.hpp"
@@ -93,7 +93,6 @@ class RTABMapSLAM::Impl {
         auto* dataPtr = reinterpret_cast<Point3fRGBA*>(data.data());
         pcl->setWidth(cloud->width);
         pcl->setHeight(cloud->height);
-        pcl->setSparse(!cloud->is_dense);
 
         std::for_each(cloud->points.begin(), cloud->points.end(), [dataPtr, &cloud](const pcl::PointXYZRGB& point) mutable {
             size_t i = &point - &cloud->points[0];
@@ -151,7 +150,7 @@ RTABMapSLAM::~RTABMapSLAM() {
         pimplRtabmap->rtabmap.close(true, databasePath);
     }
 }
-void RTABMapSLAM::setParams(const rtabmap::ParametersMap& params) {
+void RTABMapSLAM::setParams(const std::map<std::string, std::string>& params) {
     rtabParams = params;
 }
 
@@ -243,7 +242,7 @@ void RTABMapSLAM::odomPoseCB(std::shared_ptr<dai::ADatatype> data) {
 
 void RTABMapSLAM::run() {
     auto& logger = pimpl->logger;
-    while(isRunning()) {
+    while(mainLoop()) {
         if(!initialized) {
             continue;
         } else {
@@ -295,6 +294,7 @@ void RTABMapSLAM::run() {
 void RTABMapSLAM::initialize(dai::Pipeline& pipeline, int instanceNum, int width, int height) {
     auto calibHandler = pipeline.getDefaultDevice()->readCalibration();
     auto cameraId = static_cast<dai::CameraBoardSocket>(instanceNum);
+
     pimplRtabmap->model = getRTABMapCameraModel(cameraId, width, height, pimplRtabmap->localTransform, alphaScaling, calibHandler);
     if(!databasePath.empty()) {
         pimplRtabmap->rtabmap.init(rtabParams, databasePath);

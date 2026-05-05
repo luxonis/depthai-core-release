@@ -9,25 +9,19 @@
 namespace dai {
 
 /**
- * RGBD message. Carries RGB and Depth frames.
+ * MapData message. Carries grid map data and minX/minY messages to help place it in 3D space.
  */
 class MapData : public Buffer {
    public:
-    /**
-     * Construct RGBD message.
-     */
     MapData() = default;
 
-    virtual ~MapData() = default;
+    virtual ~MapData();
 
     dai::ImgFrame map;
-    float minX;
-    float minY;
+    float minX = 0.0;
+    float minY = 0.0;
 
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override {
-        metadata = utility::serialize(*this);
-        datatype = DatatypeEnum::MapData;
-    };
+    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
     DEPTHAI_SERIALIZE(MapData, Buffer::ts, Buffer::tsDevice, Buffer::sequenceNum, map, minX, minY);
 };
 
