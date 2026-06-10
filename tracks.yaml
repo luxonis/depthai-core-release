@@ -151,13 +151,13 @@ tracks:
     - git-bloom-generate -y rosdynrpm --prefix release/:{ros_distro} :{ros_distro}
       -i :{release_inc} --require-os fedora rhel
     devel_branch: kilted
-    last_release: ros-v3.6.1-kilted.2
-    last_version: 3.6.1
+    last_release: ros-v3.7.1-kilted.3
+    last_version: 3.7.1
     name: depthai
     patches: null
-    release_inc: '2'
+    release_inc: '1'
     release_repo_url: null
-    release_tag: ros-v3.6.1-kilted.2
+    release_tag: ros-v3.7.1-kilted.3
     ros_distro: kilted
     vcs_type: git
     vcs_uri: https://github.com/luxonis/depthai-core.git
