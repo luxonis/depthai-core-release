@@ -155,9 +155,9 @@ tracks:
     last_version: 3.7.1
     name: depthai
     patches: null
-    release_inc: '3'
+    release_inc: '0'
     release_repo_url: null
-    release_tag: ros-v3.7.1-kilted.3
+    release_tag: ros-v3.9.0
     ros_distro: kilted
     vcs_type: git
     vcs_uri: https://github.com/luxonis/depthai-core.git
