@@ -56,7 +56,14 @@ public:
     PYBIND11_TYPE_CASTER(cv::Mat, _("numpy.ndarray"));
 
     bool load(handle src, bool /* convert */) {
-        return NDArrayConverter::toMat(src.ptr(), value);
+        const bool converted = NDArrayConverter::toMat(src.ptr(), value);
+        if (!converted) {
+            // A failed type-caster load asks pybind11 to try the next overload.
+            // Do not leak the converter's diagnostic exception into a later
+            // overload that accepts the argument successfully.
+            PyErr_Clear();
+        }
+        return converted;
     }
 
     static handle cast(const cv::Mat &m, return_value_policy, handle defval) {
