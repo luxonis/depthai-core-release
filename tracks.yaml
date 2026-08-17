@@ -150,7 +150,7 @@ tracks:
       :{release_inc} --os-name fedora
     - git-bloom-generate -y rosdynrpm --prefix release/:{ros_distro} :{ros_distro}
       -i :{release_inc} --require-os fedora rhel
-    devel_branch: kilted
+    devel_branch: ros-devel
     last_release: ros-v3.7.1-kilted.3
     last_version: 3.7.1
     name: depthai
