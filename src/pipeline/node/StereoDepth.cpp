@@ -1,7 +1,7 @@
 #include "depthai/pipeline/node/StereoDepth.hpp"
 
 #include <fmt/format.h>  // fmt::format
-#include <fmt/std.h>     // std::filesystem::path formatting
+#include "utility/FmtCompatibility.hpp"  // std::filesystem::path formatting
 
 #include <fstream>
 
@@ -14,7 +14,7 @@
 namespace dai {
 namespace node {
 
-std::shared_ptr<StereoDepth> StereoDepth::build(bool autoCreateCameras, PresetMode presetMode, std::pair<int, int> size, std::optional<float> fps) {
+std::shared_ptr<StereoDepth> StereoDepth::build(bool autoCreateCameras, PresetMode presetMode, const std::pair<int, int>& size, std::optional<float> fps) {
     if(!autoCreateCameras) {
         return std::static_pointer_cast<StereoDepth>(shared_from_this());
     }
@@ -91,7 +91,7 @@ void StereoDepth::setInputResolution(int width, int height) {
     properties.width = width;
     properties.height = height;
 }
-void StereoDepth::setInputResolution(std::tuple<int, int> resolution) {
+void StereoDepth::setInputResolution(const std::tuple<int, int>& resolution) {
     setInputResolution(std::get<0>(resolution), std::get<1>(resolution));
 }
 void StereoDepth::setOutputSize(int width, int height) {
