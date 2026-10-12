@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 from enum import Enum
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, root_validator, field_validator
 from typing import Optional, Union, Dict, List, Tuple
 import copy
 
@@ -25,6 +25,11 @@ class BootloaderType(str, Enum):
 			return BootloaderType.HEADER_USB
 		else:
 			return BootloaderType.NONE
+
+
+class DeviceShellTransport(str, Enum):
+	SSH = 'ssh' # Connect to the device over IP (paramiko SSH)
+	ADB = 'adb' # Connect to the device over USB (adb)
 
 
 class CameraSettings(BaseModel):
@@ -224,6 +229,11 @@ class Options(BaseModel):
 	ssh_password: str = ""
 	""" Password for SSH connection to the device. """
 
+	device_shell_transport: DeviceShellTransport = DeviceShellTransport.SSH
+	""" Transport used to run shell commands / push / pull files on the device during testing
+	(e.g. ssh over IP, or adb over USB). Must be set explicitly per variant when it differs from
+	the default - never inferred from the variant title, EEPROM productName, or CDT filename. """
+
 	hub_robot_id: Optional[HubRobotIdConfig] = None
 	""" Configuration for generating the Hub robot ID. """
 
@@ -255,8 +265,15 @@ class TranslationType(BaseModel):
 
 class Extrinsics(BaseModel):
 	to_cam: str
-	rotation: RotationType
+	rotation: Optional[RotationType] = None
+	rotationMatrix: Optional[List[List[float]]] = None
 	specTranslation: TranslationType
+
+	@root_validator(skip_on_failure=True)
+	def validate_rotation_repr(cls, values):
+		if values.get("rotation") is None and values.get("rotationMatrix") is None:
+			raise ValueError("either rotation or rotationMatrix must be provided")
+		return values
 
 class CameraInfo(BaseModel):
 	name: str = ""
@@ -317,11 +334,22 @@ class VariantConfig(BaseModel):
 	configs: Optional[List[str]] = None
 	""" List of config tars names to be flashed. """
 
-	test_suite: str = ""
+	test_suite: Union[str, List[str]] = ""
 	""" Specify which test_suite to use. """
+
+	test_suite_details: Dict[str, dict] = {}
+	"""Additional test_suite_mode/test_station_config/options details, keyed by test suite name."""
 
 	test_station_config: Optional[str] = None
 	"""Path of the test_station_config, look at stage_testing/test_station/config/__init__.py for more info."""
+
+	@field_validator('test_suite', mode='before')
+	def validate_test_suite_type(cls, value):
+		if isinstance(value, str):
+			return value
+		if isinstance(value, list) and all(isinstance(item, str) for item in value):
+			return value
+		raise TypeError("test_suite must be a string or a list of strings")
 
 
 class DeviceConfig(BaseModel):

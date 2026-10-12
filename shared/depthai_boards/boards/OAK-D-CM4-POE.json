@@ -1,15 +1,16 @@
 {
     "board_config":
     {
+        "name": "OAK-D-CM4-POE",
         "cameras":{
             "CAM_A": {
                 "name": "color",
-                "hfov": 68.7938,
+                "hfov": 69.0,
                 "type": "color"
             },
             "CAM_B": {
                 "name": "left",
-                "hfov": 71.86,
+                "hfov": 72.0,
                 "type": "mono",
                 "extrinsics": {
                     "to_cam": "CAM_C",
@@ -27,7 +28,7 @@
             },
             "CAM_C": {
                 "name": "right",
-                "hfov": 71.86,
+                "hfov": 72.0,
                 "type": "mono",
                 "extrinsics": {
                     "to_cam": "CAM_A",
@@ -53,19 +54,19 @@
         {   
             "sensors":{ 
                 "BNO": {
-                    "name" : "BNO085",
+                    "name" : "BNO086",
                     "extrinsics": {
-                        "to_cam": "CAM_B",
+                        "to_cam": "CAM_A",
                         "specTranslation": {
-                            "x": -2.022,
-                            "y": -8.155,
-                            "z": 0
+                            "x": -2.0473,
+                            "y": -0.1088,
+                            "z": 0.0
                             },
-                        "rotation":{
-                            "r": 0,
-                            "p": 0,
-                            "y": 270
-                            }
+                        "rotationMatrix": [
+                            [0, -1, 0],
+                            [1, 0, 0],
+                            [0, 0, 1]
+                            ]
                         }
                     }
                 }
