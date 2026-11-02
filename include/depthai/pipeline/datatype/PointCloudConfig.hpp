@@ -1,143 +1,69 @@
 #pragma once
 
-#include <array>
+#include <unordered_map>
 #include <vector>
 
-#include "depthai/common/CameraBoardSocket.hpp"
-#include "depthai/common/DepthUnit.hpp"
-#include "depthai/common/HousingCoordinateSystem.hpp"
+#include "depthai-shared/datatype/RawPointCloudConfig.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
 
 namespace dai {
 
 /**
- * PointCloudConfig message. Carries point cloud output settings.
+ * PointCloudConfig message. Carries ROI (region of interest) and threshold for depth calculation
  */
 class PointCloudConfig : public Buffer {
-    // false = filter to valid (z > 0) points only (default)
-    // true  = keep all width*height points (organized)
-    bool organized = false;
-
-    std::array<std::array<float, 4>, 4> transformationMatrix = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}};
-
-    LengthUnit lengthUnit = LengthUnit::MILLIMETER;
+    std::shared_ptr<RawBuffer> serialize() const override;
+    RawPointCloudConfig& cfg;
 
    public:
-    enum class CoordinateSystemType : uint8_t {
-        DEFAULT,        ///< Default (camera coordinates, no additional transformation)
-        CAMERA_SOCKET,  ///< Transform to another camera
-        HOUSING         ///< Transform to housing coordinate system
-    };
-
-   private:
-    CoordinateSystemType coordSystemType = CoordinateSystemType::DEFAULT;
-    CameraBoardSocket targetCameraSocket = CameraBoardSocket::AUTO;
-    HousingCoordinateSystem targetHousingCS = HousingCoordinateSystem::AUTO;
-    bool useSpecTranslation = false;
-
-   public:
-    PointCloudConfig() = default;
-    virtual ~PointCloudConfig();
-
     /**
-     * Retrieve whether the point cloud is organized (all width*height points kept).
-     * @returns true if all width*height points are output, false if only valid (z > 0) points are kept
+     * Construct PointCloudConfig message.
      */
-    bool getOrganized() const;
+    PointCloudConfig();
+    explicit PointCloudConfig(std::shared_ptr<RawPointCloudConfig> ptr);
+    virtual ~PointCloudConfig() = default;
 
     /**
-     * Retrieve transformation matrix applied to every output point.
-     * @returns 4x4 row-major transformation matrix (identity by default)
+     * Set explicit configuration.
+     * @param config Explicit configuration
+     */
+    PointCloudConfig& set(dai::RawPointCloudConfig config);
+
+    /**
+     * Retrieve configuration data for SpatialLocationCalculator.
+     * @returns config for SpatialLocationCalculator
+     */
+    dai::RawPointCloudConfig get() const;
+
+    /**
+     * Retrieve sparse point cloud calculation status.
+     * @returns true if sparse point cloud calculation is enabled, false otherwise
+     */
+    bool getSparse() const;
+
+    /**
+     * Retrieve transformation matrix for point cloud calculation.
+     * @returns 4x4 transformation matrix
      */
     std::array<std::array<float, 4>, 4> getTransformationMatrix() const;
 
     /**
-     * Retrieve the length unit used for output point coordinates.
+     * Enable or disable sparse point cloud calculation.
+     * @param enable
      */
-    LengthUnit getLengthUnit() const;
+    PointCloudConfig& setSparse(bool enable);
 
     /**
-     * Enable or disable organized point cloud output.
-     * When true all width*height points are kept; when false only points with z > 0 are emitted.
-     */
-    PointCloudConfig& setOrganized(bool enable);
-
-    /**
-     * Set a 4x4 transformation matrix applied to every output point.
-     * Default is the identity matrix.
+     * Set 4x4 transformation matrix for point cloud calculation. Default is an identity matrix.
+     * @param transformationMatrix
      */
     PointCloudConfig& setTransformationMatrix(const std::array<std::array<float, 4>, 4>& transformationMatrix);
 
     /**
-     * Convenience overload: set a 3x3 rotation matrix (translation set to zero).
+     * Set 3x3 transformation matrix for point cloud calculation. Default is an identity matrix.
+     * @param transformationMatrix
      */
     PointCloudConfig& setTransformationMatrix(const std::array<std::array<float, 3>, 3>& transformationMatrix);
-
-    /**
-     * Set the length unit for output point coordinates.
-     */
-    PointCloudConfig& setLengthUnit(LengthUnit unit);
-
-    /**
-     * Set target coordinate system to another camera socket.
-     * @param targetCamera Target camera socket
-     */
-    PointCloudConfig& setTargetCoordinateSystem(CameraBoardSocket targetCamera);
-
-    /**
-     * Set target coordinate system to housing coordinate system.
-     * @param housingCS Target housing coordinate system
-     */
-    PointCloudConfig& setTargetCoordinateSystem(HousingCoordinateSystem housingCS);
-
-    /**
-     * Deprecated: use setTargetCoordinateSystem(targetCamera) instead.
-     */
-    PointCloudConfig& setTargetCoordinateSystem(CameraBoardSocket targetCamera, bool useSpecTranslation);
-
-    /**
-     * Deprecated: use setTargetCoordinateSystem(housingCS) instead.
-     */
-    PointCloudConfig& setTargetCoordinateSystem(HousingCoordinateSystem housingCS, bool useSpecTranslation);
-
-    /**
-     * Retrieve the coordinate system type.
-     */
-    CoordinateSystemType getCoordinateSystemType() const;
-
-    /**
-     * Retrieve the target camera socket (valid when coordSystemType == CAMERA_SOCKET).
-     */
-    CameraBoardSocket getTargetCameraSocket() const;
-
-    /**
-     * Retrieve the target housing coordinate system (valid when coordSystemType == HOUSING).
-     */
-    HousingCoordinateSystem getTargetHousingCS() const;
-
-    /**
-     * Retrieve whether spec translation is used.
-     */
-    bool getUseSpecTranslation() const;
-
-    DatatypeEnum getDatatype() const override {
-        return DatatypeEnum::PointCloudConfig;
-    }
-
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
-
-    DEPTHAI_SERIALIZE(PointCloudConfig,
-                      Buffer::sequenceNum,
-                      Buffer::ts,
-                      Buffer::tsDevice,
-                      Buffer::tsSystem,
-                      organized,
-                      transformationMatrix,
-                      lengthUnit,
-                      coordSystemType,
-                      targetCameraSocket,
-                      targetHousingCS,
-                      useSpecTranslation);
 };
 
 }  // namespace dai

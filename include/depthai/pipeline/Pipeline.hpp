@@ -1,451 +1,104 @@
-// IWYU pragma: private, include "depthai/depthai.hpp"
 #pragma once
 
 // standard
-#include <chrono>
+#include <map>
 #include <memory>
-#include <optional>
-#include <thread>
-#include <type_traits>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 // project
 #include "AssetManager.hpp"
-#include "DeviceNode.hpp"
 #include "Node.hpp"
-#include "PipelineStateApi.hpp"
 #include "depthai/device/CalibrationHandler.hpp"
 #include "depthai/device/Device.hpp"
 #include "depthai/openvino/OpenVINO.hpp"
-#include "depthai/pipeline/datatype/PipelineEventAggregationConfig.hpp"
-#include "depthai/utility/AtomicBool.hpp"
 
 // shared
-#include "depthai/common/CameraBoardSocket.hpp"
-#include "depthai/device/BoardConfig.hpp"
-#include "depthai/pipeline/InputQueue.hpp"
-#include "depthai/pipeline/PipelineSchema.hpp"
-#include "depthai/pipeline/datatype/PipelineState.hpp"
-#include "depthai/pipeline/node/Camera.hpp"
-#include "depthai/properties/GlobalProperties.hpp"
-#include "depthai/utility/RecordReplay.hpp"
+#include "depthai-shared/device/BoardConfig.hpp"
+#include "depthai-shared/pipeline/PipelineSchema.hpp"
+#include "depthai-shared/properties/GlobalProperties.hpp"
 
 namespace dai {
 
-namespace fs = std::filesystem;
-
-enum class PipelineAutoCalibrationMode : int {
-    OFF = 0,
-    ON_START = 1,
-    CONTINUOUS = 2,
-};
-
-class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
+class PipelineImpl {
     friend class Pipeline;
     friend class Node;
-    friend class Node::Input;
-    friend class DeviceBase;
-    friend class utility::PipelineImplHelper;
 
    public:
-    PipelineImpl(bool createImplicitDevice = true) : assetManager("/pipeline/") {
-        if(createImplicitDevice) {
-            defaultDevice = std::make_shared<Device>();
-        } else {
-            hostProperties = DeviceProperties();
-            defaultDeviceProperties = &hostProperties.value();
-        }
-    }
-    PipelineImpl(std::shared_ptr<Device> device) : assetManager("/pipeline/"), defaultDevice{std::move(device)} {}
-    PipelineImpl(const PipelineImpl&) = delete;
-    PipelineImpl& operator=(const PipelineImpl&) = delete;
-    PipelineImpl(PipelineImpl&&) = delete;
-    PipelineImpl& operator=(PipelineImpl&&) = delete;
-    ~PipelineImpl();
-
-   protected:
-    // Record and Replay
-    RecordConfig recordConfig;
-    bool enableHolisticRecordReplay = false;
-    std::unordered_map<std::string, std::filesystem::path> recordReplayFilenames;
-    bool removeRecordReplayFiles = true;
-    std::string defaultDeviceId;
-    std::unordered_map<Node::Id, std::shared_ptr<Device>> bridgeHostDevices;
-    // Is the pipeline building on host? Some steps should be skipped when building on device
-    bool buildingOnHost = true;
-
-    // Pipeline events
-    bool enablePipelineDebugging = false;
-    std::shared_ptr<MessageQueue> pipelineStateOut;
-    std::shared_ptr<InputQueue> pipelineStateRequest;
-    std::shared_ptr<MessageQueue> pipelineStateTraceOut;
-    std::shared_ptr<InputQueue> pipelineStateTraceRequest;
-
-    // Access to nodes
-    std::vector<std::shared_ptr<Node>> getAllNodes() const;
-    std::shared_ptr<Node> getNode(Node::Id id) const;
-    std::vector<std::shared_ptr<Node>> getSourceNodes();
+    PipelineImpl() = default;
+    PipelineImpl(const PipelineImpl&) = default;
 
    private:
-    static std::string createTelemetryPipelineId();
-
     // static functions
     static bool isSamePipeline(const Node::Output& out, const Node::Input& in);
     static bool canConnect(const Node::Output& out, const Node::Input& in);
 
     // Functions
     Node::Id getNextUniqueId();
-    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
-    PipelineSchema getDevicePipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE,
-                                           bool includePipelineDebugging = true,
-                                           std::optional<std::string> deviceId = std::nullopt) const;
+    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
+    tl::optional<OpenVINO::Version> getPipelineOpenVINOVersion() const;
+    bool isOpenVINOVersionCompatible(OpenVINO::Version version) const;
     Device::Config getDeviceConfig() const;
-    void setCameraTuningBlobPath(const fs::path& path);
-    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path);
+    void setCameraTuningBlobPath(const dai::Path& path);
     void setXLinkChunkSize(int sizeBytes);
-
-    // Per-device variants of the pipeline-level device setters/getters. The device
-    // must already be part of this pipeline; the no-device forms target the master.
-    std::shared_ptr<Device> resolvePipelineDevice(const std::shared_ptr<Device>& device) const;
-    Device::Config getDeviceConfig(const std::shared_ptr<Device>& device) const;
-    void setCameraTuningBlobPath(const std::shared_ptr<Device>& device, const fs::path& path);
-    void setCameraTuningBlobPath(const std::shared_ptr<Device>& device, CameraBoardSocket socket, const fs::path& path);
-    void setXLinkChunkSize(const std::shared_ptr<Device>& device, int sizeBytes);
-    void setSippBufferSize(const std::shared_ptr<Device>& device, int sizeBytes);
-    void setSippDmaBufferSize(const std::shared_ptr<Device>& device, int sizeBytes);
-    void setBoardConfig(const std::shared_ptr<Device>& device, const BoardConfig& boardCfg);
-    BoardConfig getBoardConfig(const std::shared_ptr<Device>& device) const;
-    void setCalibrationData(const std::shared_ptr<Device>& device, const CalibrationHandler& calibrationDataHandler);
-    bool isCalibrationDataAvailable(const std::shared_ptr<Device>& device) const;
-    CalibrationHandler getCalibrationData(const std::shared_ptr<Device>& device) const;
-    void setEepromData(const std::shared_ptr<Device>& device, const std::optional<EepromData>& eepromData);
-    std::optional<EepromData> getEepromData(const std::shared_ptr<Device>& device) const;
-    uint32_t getEepromId(const std::shared_ptr<Device>& device) const;
-    void setDeviceProperties(const std::shared_ptr<Device>& device, const DeviceProperties& deviceProperties);
-    DeviceProperties getDeviceProperties(const std::shared_ptr<Device>& device) const;
-
-    // Board configuration per non-master device; the master keeps using 'board'
-    std::unordered_map<const Device*, BoardConfig> deviceBoardConfigs;
-    GlobalProperties getGlobalProperties() const;
-    void setGlobalProperties(const GlobalProperties& globalProperties);
-    void setDefaultDeviceProperties(const DeviceProperties& deviceProperties);
-    void setDefaultDevicePropertiesRef(DeviceProperties* deviceProperties);
-    std::optional<DeviceProperties> getDefaultDeviceProperties() const;
     void setSippBufferSize(int sizeBytes);
     void setSippDmaBufferSize(int sizeBytes);
-    void setBoardConfig(const BoardConfig& board);
-    void setAutoCalibrationMode(PipelineAutoCalibrationMode mode);
-    std::pair<std::shared_ptr<dai::node::Camera>, std::shared_ptr<dai::node::Camera>> getStereoPair(const std::shared_ptr<Device>& device) const;
-    bool hasDynamicCalibration() const;
-    PipelineAutoCalibrationMode getAutoCalibrationMode() const;
-
+    void setBoardConfig(BoardConfig board);
     BoardConfig getBoardConfig() const;
 
-    void serialize(PipelineSchema& schema,
-                   Assets& assets,
-                   std::vector<std::uint8_t>& assetStorage,
-                   SerializationType type = DEFAULT_SERIALIZATION_TYPE,
-                   std::optional<std::string> deviceId = std::nullopt) const;
-    nlohmann::json serializeToJson(bool includeAssets) const;
-    void remove(const std::shared_ptr<Node>& node);
+    // Access to nodes
+    std::vector<std::shared_ptr<const Node>> getAllNodes() const;
+    std::vector<std::shared_ptr<Node>> getAllNodes();
+    std::shared_ptr<const Node> getNode(Node::Id id) const;
+    std::shared_ptr<Node> getNode(Node::Id id);
+
+    void serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage, SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
+    nlohmann::json serializeToJson() const;
+    void remove(std::shared_ptr<Node> node);
 
     std::vector<Node::Connection> getConnections() const;
-    std::vector<Node::ConnectionInternal> getConnectionsInternal() const;
     void link(const Node::Output& out, const Node::Input& in);
     void unlink(const Node::Output& out, const Node::Input& in);
-    void setCalibrationData(const CalibrationHandler& calibrationDataHandler);
-    bool isCalibrationDataAvailable() const;
+    void setCalibrationData(CalibrationHandler calibrationDataHandler);
     CalibrationHandler getCalibrationData() const;
-    void setEepromData(const std::optional<EepromData>& eepromData);
-    std::optional<EepromData> getEepromData() const;
-    uint32_t getEepromId() const;
-    void setMultiDeviceCalibration(const std::vector<MultiDeviceExtrinsics>& graph);
-    std::optional<std::vector<MultiDeviceExtrinsics>> getMultiDeviceCalibration() const;
-    void clearMultiDeviceCalibration();
-    void applyMultiDeviceCalibration(const std::optional<std::vector<MultiDeviceExtrinsics>>& graph);
-    bool isHostOnly() const;
-    bool isDeviceOnly() const;
-    std::vector<std::shared_ptr<Device>> getAllAssignedDevices() const;
-
-    // Pipeline state getters
-    PipelineStateApi getPipelineState();
 
     // Must be incremented and unique for each node
     Node::Id latestId = 0;
     // Pipeline asset manager
     AssetManager assetManager;
     // Optionally forced version
-    std::optional<OpenVINO::Version> forceRequiredOpenVINOVersion;
+    tl::optional<OpenVINO::Version> forceRequiredOpenVINOVersion;
     // Global pipeline properties
     GlobalProperties globalProperties;
-    // // Optimized for adding, searching and removing connections
-    // using NodeMap = std::unordered_map<Node::Id, std::shared_ptr<Node>>;
-    // NodeMap nodeMap;
-    std::vector<std::shared_ptr<Node>> nodes;
-    std::vector<std::pair<int64_t, int64_t>> xlinkBridges;
-
-    // TODO(themarpe) - refactor, connections are now carried by nodes instead
-    using NodeConnectionMap = std::unordered_map<Node::Id, std::unordered_set<Node::ConnectionInternal, Node::ConnectionInternal::Hash>>;
-    // // Connection map, NodeId represents id of node connected TO (input)
-    // NodeConnectionMap nodeConnectionMap;
-    /// Get a reference to internal connection representation
-    NodeConnectionMap getConnectionMap() const;
-
+    // Optimized for adding, searching and removing connections
+    using NodeMap = std::unordered_map<Node::Id, std::shared_ptr<Node>>;
+    NodeMap nodeMap;
+    using NodeConnectionMap = std::unordered_map<Node::Id, std::unordered_set<Node::Connection>>;
+    // Connection map, NodeId represents id of node connected TO (input)
+    NodeConnectionMap nodeConnectionMap;
     // Board configuration
     BoardConfig board;
 
-    // Build-time automatic calibration policy for implicit AutoCalibration node creation.
-    PipelineAutoCalibrationMode autoCalibrationMode = PipelineAutoCalibrationMode::ON_START;
-    bool autoCalibrationModeSetByApi = false;
-
-    // Output queues
-    std::vector<std::shared_ptr<MessageQueue>> outputQueues;
-
-    // is pipeline running - stays set until stop() has completed, so isRunning()/run()
-    // cover the whole teardown (device close included)
-    AtomicBool running{false};
-    // set for the duration of stop(): device state transitions reported while the devices
-    // are being closed must not re-trigger a stop or user callbacks
-    AtomicBool stopping{false};
-    // Thread stopping the pipeline after a device loss. It is spawned from the device's
-    // monitor thread (which stop() joins indirectly) and owns no reference to the pipeline;
-    // wait(), start() and the destructor join it.
-    std::thread deviceLossStopThread;
-    std::mutex deviceLossStopMtx;
-    void joinDeviceLossStop();
-    std::string telemetryPipelineId{createTelemetryPipelineId()};
-    std::optional<std::chrono::steady_clock::time_point> telemetryPipelineStartedAt;
-
-    // was pipeline built
-    AtomicBool isBuild{false};
-
-    // Add a mutex for any state change
-    std::mutex stateMtx;
-
-    // Calibration mutex
-    mutable std::mutex calibMtx;
-    // Serializes multi-device calibration updates (read previous, push to devices, rollback, store).
-    mutable std::mutex multiDeviceCalibMtx;
-
-    // DeviceBase for hybrid pipelines
-    std::shared_ptr<Device> defaultDevice;
-    std::optional<DeviceProperties> hostProperties;
-    DeviceProperties* defaultDeviceProperties = nullptr;
-
-    // Queue for tasks
-    LockingQueue<std::function<void()>> tasks;
-
-    // Devices that are part of this pipeline. Registered explicitly via addDevice
-    // or implicitly on first use (node created with an explicit device).
-    // defaultDevice is the master and is not necessarily contained here.
-    std::vector<std::shared_ptr<Device>> devices;
-
-    // Serializes concurrent per-device schema serialization (devices start in parallel)
-    mutable std::mutex serializeMtx;
-
-    // Input -> distinct source devices (nullptr entry = host), resolved from the user
-    // graph at build() before bridge insertion. See Node::Input::getSourceDevice.
-    std::unordered_map<const Node::Input*, std::vector<std::shared_ptr<Device>>> inputSourceDevices;
-
-    // Source device of an input: the device of the upstream node, nullptr if the
-    // upstream node runs on host. Uses the map above after build, resolves live before.
-    std::shared_ptr<Device> getInputSourceDevice(const Node::Input* input) const;
-
-    // Per-device pipeline state (guarded by deviceStateMtx)
-    mutable std::mutex deviceStateMtx;
-    std::unordered_map<const DeviceBase*, DeviceState> deviceStates;
-    std::function<void(std::shared_ptr<Device>, DeviceState)> deviceStateCallback;
-    // Devices that consume other devices' streams (B side of a relay feeding a device
-    // node); losing one of these for good stops the pipeline. Derived at build().
-    std::unordered_set<const Device*> fatalDevices;
-    // When set, losing any device that carries a node stops the pipeline (strict mode).
-    // Off by default: a lost device only idles its streams (permissive mode).
-    AtomicBool stopOnDeviceLoss{false};
-
-    // Called from a device's monitor thread on state transitions. On FAILED, idles the
-    // device's XLink host nodes and stops the pipeline when the device was fatal, the
-    // last one alive, or stopOnDeviceLoss is set.
-    void onDeviceStateChanged(DeviceBase* device, DeviceState state);
-
-    DeviceState getDeviceState(const std::shared_ptr<Device>& device) const;
-    void setDeviceStateCallback(std::function<void(std::shared_ptr<Device>, DeviceState)> callback);
-
-    // Register a device with this pipeline. The first registered device is promoted
-    // to master (default device) if none exists. Registering the same device twice is a no-op.
-    std::shared_ptr<Device> registerDevice(std::shared_ptr<Device> device);
-    // Make the device the master: binds the device nodes adopted without a device to it and
-    // carries over the settings parked in the host-side properties before there was a master
-    void promoteToMaster(const std::shared_ptr<Device>& device);
-
-    // All devices that are part of this pipeline: master (default device) first,
-    // then the rest in registration order.
-    std::vector<std::shared_ptr<Device>> getDevices() const;
-
-    void addTask(std::function<void()> task) {
-        tasks.push(std::move(task));
-    }
-
-    void processTasks(bool waitForTasks = false, double timeoutSeconds = -1.0) {
-        bool timeoutSet = timeoutSeconds >= 0.0;
-        if(waitForTasks) {
-            std::function<void()> task;
-            bool success;
-            if(timeoutSet) {
-                success = tasks.tryWaitAndPop(task, std::chrono::duration<double>(timeoutSeconds));
-            } else {
-                success = tasks.waitAndPop(task);
-            }
-            if(!success) {
-                return;
-            }
-            task();
-        }
-        // Regardless if we should wait or not, run all remaining tasks
-        while(!tasks.empty()) {
-            std::function<void()> task;
-            bool success = false;
-            success = tasks.tryPop(task);
-            if(!success) {
-                // No more tasks
-                break;
-            }
-            task();
-        }
-    }
-
-    template <typename N>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && !std::is_base_of<HostRunnable, N>::value, std::shared_ptr<N>> createNode() {
-        if(defaultDevice == nullptr) {
-            throw std::runtime_error("Pipeline is host only, cannot create device node");
-        }
-        return N::create(defaultDevice);
-    }
-
-    template <typename N, typename... Rest>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && !std::is_base_of<HostRunnable, N>::value, std::shared_ptr<N>> createNode(
-        std::shared_ptr<Device> device, Rest&&... rest) {
-        if(device == nullptr) {
-            throw std::runtime_error("Explicit device is null");
-        }
-        return N::create(device, std::forward<Rest>(rest)...);
-    }
-
-    template <typename N, typename First, typename... Rest>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && !std::is_base_of<HostRunnable, N>::value
-                         && !std::is_same_v<std::decay_t<First>, std::shared_ptr<Device>>,
-                     std::shared_ptr<N>>
-    createNode(First&& first, Rest&&... rest) {
-        if(defaultDevice == nullptr) {
-            throw std::runtime_error("Pipeline is host only, cannot create device node");
-        }
-        return N::create(defaultDevice, std::forward<First>(first), std::forward<Rest>(rest)...);
-    }
-
-    template <typename N>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && std::is_base_of<HostRunnable, N>::value, std::shared_ptr<N>> createNode() {
-        if(defaultDevice == nullptr) {
-            return N::create();
-        } else {
-            return N::create(defaultDevice);
-        }
-    }
-
-    template <typename N, typename... Rest>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && std::is_base_of<HostRunnable, N>::value, std::shared_ptr<N>> createNode(
-        std::shared_ptr<Device> device, Rest&&... rest) {
-        if(device == nullptr) {
-            throw std::runtime_error("Explicit device is null");
-        }
-        return N::create(device, std::forward<Rest>(rest)...);
-    }
-
-    template <typename N, typename First, typename... Rest>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value && std::is_base_of<HostRunnable, N>::value
-                         && !std::is_same_v<std::decay_t<First>, std::shared_ptr<Device>>,
-                     std::shared_ptr<N>>
-    createNode(First&& first, Rest&&... rest) {
-        if(defaultDevice == nullptr) {
-            return N::create(std::forward<First>(first), std::forward<Rest>(rest)...);
-        }
-        return N::create(defaultDevice, std::forward<First>(first), std::forward<Rest>(rest)...);
-    }
-
-    template <typename N, typename... Args>
-    std::enable_if_t<!std::is_base_of<DeviceNode, N>::value, std::shared_ptr<N>> createNode(Args&&... args) {
-        return N::create(std::forward<Args>(args)...);
-    }
-
     // Template create function
-    template <class N, typename... Args>
-    std::shared_ptr<N> create(const std::shared_ptr<PipelineImpl>& itself, Args&&... args) {
-        (void)itself;
+    template <class N>
+    std::shared_ptr<N> create(const std::shared_ptr<PipelineImpl>& itself) {
         // Check that passed type 'N' is subclass of Node
         static_assert(std::is_base_of<Node, N>::value, "Specified class is not a subclass of Node");
+        // Get unique id for this new node
+        auto id = getNextUniqueId();
         // Create and store the node in the map
-        auto node = createNode<N>(std::forward<Args>(args)...);
-        // std::shared_ptr<N> node = nullptr;
-        add(node);
+        auto node = std::make_shared<N>(itself, id);
+        nodeMap[id] = node;
         // Return shared pointer to this node
         return node;
     }
-
-    template <class N, typename... Args>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value, std::shared_ptr<N>> createWithDevice(const std::shared_ptr<PipelineImpl>& itself,
-                                                                                                 std::shared_ptr<Device> device,
-                                                                                                 Args&&... args) {
-        (void)itself;
-        static_assert(std::is_base_of<Node, N>::value, "Specified class is not a subclass of Node");
-        if(device == nullptr) {
-            throw std::runtime_error("Explicit device is null");
-        }
-        auto node = N::create(device, std::forward<Args>(args)...);
-        add(node);
-        return node;
-    }
-
-    // Add a node to nodeMap
-    void add(const std::shared_ptr<Node>& node);
-
-    /**
-     * Wire subtree into this pipeline (assign ids, parent weak_ptr, default device).
-     * Used when a node that is already in the pipeline gains new children (lazy subgraphs).
-     */
-    void adoptSubtree(std::shared_ptr<Node> root);
-
-    // Run only host side, if any device nodes are present, error out
-    bool isRunning() const;
-    bool isBuilt() const;
-    void build();
-    void start();
-    void wait();
-    void stop();
-    void run();
-
-    // Reset connections and re-send the pipeline; restricted to one device when given
-    void resetConnections(DeviceBase* device = nullptr);
-    // Make XLink host nodes of the given device (all when null) exit quietly
-    void disconnectXLinkHosts(DeviceBase* device = nullptr);
-
-   private:
-    // Resource
-    std::vector<uint8_t> loadResource(const fs::path& uri);
-    std::vector<uint8_t> loadResourceCwd(fs::path uri, fs::path cwd, bool moveAsset = false);
 };
 
 /**
  * @brief Represents the pipeline, set of nodes and connections between them
  */
 class Pipeline {
-    friend class PipelineImpl;
-    friend class Device;
-
     std::shared_ptr<PipelineImpl> pimpl;
-
-   public:
-    using AutoCalibrationMode = PipelineAutoCalibrationMode;
-
     PipelineImpl* impl() {
         return pimpl.get();
     }
@@ -453,70 +106,25 @@ class Pipeline {
         return pimpl.get();
     }
 
-    std::vector<std::shared_ptr<Node>> getSourceNodes() {
-        return impl()->getSourceNodes();
-    }
-
+   public:
     /**
-     * Creates a pipeline
-     * @param createImplicitDevice If true, creates a default device (default = true)
+     * Constructs a new pipeline
      */
-    explicit Pipeline(bool createImplicitDevice = true);
+    Pipeline();
+    explicit Pipeline(const std::shared_ptr<PipelineImpl>& pimpl);
 
-    /**
-     * Creates a pipeline with specified device
-     */
-    explicit Pipeline(std::shared_ptr<Device> device);
-
-    /**
-     * Creates a pipeline with specified device
-     */
-    explicit Pipeline(std::shared_ptr<PipelineImpl> pimpl);
+    /// Clone the pipeline (Creates a copy)
+    Pipeline clone() const;
 
     /**
      * @returns Global properties of current pipeline
      */
-    GlobalProperties getGlobalProperties() const {
-        return impl()->getGlobalProperties();
-    }
-
-    /**
-     * Sets global properties of pipeline
-     */
-    void setGlobalProperties(GlobalProperties globalProperties) {
-        impl()->setGlobalProperties(globalProperties);
-    }
-
-    /**
-     * Sets default device properties
-     */
-    void setDefaultDeviceProperties(DeviceProperties deviceProperties) {
-        impl()->setDefaultDeviceProperties(deviceProperties);
-    }
-
-    /**
-     * Sets default device properties reference. The properties should live at least as long as the pipeline.
-     */
-    void setDefaultDevicePropertiesRef(DeviceProperties* deviceProperties) {
-        impl()->setDefaultDevicePropertiesRef(deviceProperties);
-    }
-
-    /**
-     * Gets a copy of default device properties. If pipeline is in host only mode, returns host properties, otherwise returns device properties
-     */
-    std::optional<DeviceProperties> getDefaultDeviceProperties() const {
-        return impl()->getDefaultDeviceProperties();
-    }
+    GlobalProperties getGlobalProperties() const;
 
     /**
      * @returns Pipeline schema
      */
-    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
-
-    /**
-     * @returns Device pipeline schema (without host only nodes and connections)
-     */
-    PipelineSchema getDevicePipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
+    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
 
     // void loadAssets(AssetManager& assetManager);
     void serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage) const {
@@ -524,44 +132,18 @@ class Pipeline {
     }
 
     /// Returns whole pipeline represented as JSON
-    nlohmann::json serializeToJson(bool includeAssests = true) const {
-        return impl()->serializeToJson(includeAssests);
+    nlohmann::json serializeToJson() const {
+        return impl()->serializeToJson();
     }
 
     /**
-     * Creates and adds a node to the pipeline.
+     * Adds a node to pipeline.
      *
      * Node is specified by template argument N
      */
-    template <class N, typename... Args>
-    std::shared_ptr<N> create(Args&&... args) {
-        return impl()->create<N>(pimpl, std::forward<Args>(args)...);
-    }
-
-    /**
-     * Creates a device node on the specified device and adds it to the pipeline.
-     * The device becomes part of the pipeline on first use. Only device nodes can be
-     * created this way - creating a host node with a device is a compile-time error.
-     */
-    template <class N, typename... Args>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value, std::shared_ptr<N>> create(std::shared_ptr<Device> device, Args&&... args) {
-        return impl()->createWithDevice<N>(pimpl, std::move(device), std::forward<Args>(args)...);
-    }
-
-    /**
-     * Creates a device node on the specified device and adds it to the pipeline.
-     * Same as create(device, ...) - kept as an explicitly named alternative.
-     */
-    template <class N, typename... Args>
-    std::enable_if_t<std::is_base_of<DeviceNode, N>::value, std::shared_ptr<N>> createForDevice(std::shared_ptr<Device> device, Args&&... args) {
-        return impl()->createWithDevice<N>(pimpl, std::move(device), std::forward<Args>(args)...);
-    }
-
-    /**
-     * Adds an existing node to the pipeline
-     */
-    void add(std::shared_ptr<Node> node) {
-        impl()->add(node);
+    template <class N>
+    std::shared_ptr<N> create() {
+        return impl()->create<N>(pimpl);
     }
 
     /// Removes a node from pipeline
@@ -570,7 +152,11 @@ class Pipeline {
     }
 
     /// Get a vector of all nodes
-    std::vector<std::shared_ptr<Node>> getAllNodes() const {
+    std::vector<std::shared_ptr<const Node>> getAllNodes() const {
+        return impl()->getAllNodes();
+    }
+    /// Get a vector of all nodes
+    std::vector<std::shared_ptr<Node>> getAllNodes() {
         return impl()->getAllNodes();
     }
 
@@ -589,8 +175,39 @@ class Pipeline {
     }
 
     using NodeConnectionMap = PipelineImpl::NodeConnectionMap;
-    NodeConnectionMap getConnectionMap() const {
-        return impl()->getConnectionMap();
+    /// Get a reference to internal connection representation
+    const NodeConnectionMap& getConnectionMap() const {
+        return impl()->nodeConnectionMap;
+    }
+
+    using NodeMap = PipelineImpl::NodeMap;
+    /// Get a reference to internal node map
+    const NodeMap& getNodeMap() const {
+        return impl()->nodeMap;
+    }
+
+    /**
+     * Link output to an input. Both nodes must be on the same pipeline
+     *
+     * Throws an error if they aren't or cannot be connected
+     *
+     * @param out Nodes output to connect from
+     * @param in Nodes input to connect to
+     */
+    void link(const Node::Output& out, const Node::Input& in) {
+        impl()->link(out, in);
+    }
+
+    /**
+     * Unlink output from an input.
+     *
+     * Throws an error if link doesn't exists
+     *
+     * @param out Nodes output to unlink from
+     * @param in Nodes input to unlink to
+     */
+    void unlink(const Node::Output& out, const Node::Input& in) {
+        impl()->unlink(out, in);
     }
 
     /// Get pipelines AssetManager as reference
@@ -626,90 +243,19 @@ class Pipeline {
         return impl()->getCalibrationData();
     }
 
-    /**
-     * check if calib data is available on the device
-     * @return true - calib data is available
-     * @return false - calib data is not available
-     */
-    bool isCalibrationDataAvailable() const {
-        return impl()->isCalibrationDataAvailable();
+    /// Get possible OpenVINO version to run this pipeline
+    OpenVINO::Version getOpenVINOVersion() const {
+        return impl()->getPipelineOpenVINOVersion().value_or(OpenVINO::DEFAULT_VERSION);
     }
 
-    /**
-     * gets the eeprom data from the pipeline
-     *
-     * @return eepromData from the the pipeline
-     */
-    std::optional<EepromData> getEepromData() const {
-        return impl()->getEepromData();
-    }
-
-    /**
-     * Sets the eeprom data in pipeline
-     *
-     * @param eepromData EepromData object that is loaded in the pipeline.
-     */
-    void setEepromData(std::optional<EepromData> eepromData) {
-        impl()->setEepromData(eepromData);
-    }
-
-    /**
-     * Sets the cross-device calibration graph shared by all devices in the pipeline.
-     *
-     * The graph is validated with beta::MultiDeviceCalibrationHandler. Before the
-     * pipeline is built it is only stored and travels to the devices with the
-     * pipeline schema. On a built pipeline it is additionally checked against every
-     * assigned device's local calibration and pushed to all assigned devices at
-     * runtime, so already streaming Camera and ToF nodes switch to the new graph.
-     *
-     * @throws std::invalid_argument when the graph structure is invalid
-     * @throws std::runtime_error when a device's local calibration does not match
-     * the graph or a device rejects the update; devices updated before the failure
-     * are restored to the previous graph and the pipeline keeps the previous graph
-     * @param graph Directed cross-device calibration edges.
-     */
-    void setMultiDeviceCalibration(std::vector<MultiDeviceExtrinsics> graph) {
-        impl()->setMultiDeviceCalibration(graph);
-    }
-
-    /**
-     * Gets the cross-device calibration graph from the pipeline
-     *
-     * @return the graph when one is set, std::nullopt otherwise
-     */
-    std::optional<std::vector<MultiDeviceExtrinsics>> getMultiDeviceCalibration() const {
-        return impl()->getMultiDeviceCalibration();
-    }
-
-    /**
-     * Removes any cross-device calibration graph from the pipeline.
-     *
-     * On a built pipeline the removal is pushed to all assigned devices, which then
-     * publish their local calibration metadata again.
-     *
-     * @throws std::runtime_error when a device rejects the update
-     */
-    void clearMultiDeviceCalibration() {
-        impl()->clearMultiDeviceCalibration();
-    }
-
-    /**
-     * Gets the eeprom id from the pipeline
-     *
-     * @return eeprom id from the pipeline
-     */
-    uint32_t getEepromId() const {
-        return impl()->getEepromId();
+    /// Get required OpenVINO version to run this pipeline. Can be none
+    tl::optional<OpenVINO::Version> getRequiredOpenVINOVersion() const {
+        return impl()->getPipelineOpenVINOVersion();
     }
 
     /// Set a camera IQ (Image Quality) tuning blob, used for all cameras
-    void setCameraTuningBlobPath(const fs::path& path) {
+    void setCameraTuningBlobPath(const dai::Path& path) {
         impl()->setCameraTuningBlobPath(path);
-    }
-
-    /// Set a camera IQ (Image Quality) tuning blob, used for specific board socket
-    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path) {
-        impl()->setCameraTuningBlobPath(socket, path);
     }
 
     /**
@@ -743,19 +289,14 @@ class Pipeline {
         impl()->setSippDmaBufferSize(sizeBytes);
     }
 
+    /// Checks whether a given OpenVINO version is compatible with the pipeline
+    bool isOpenVINOVersionCompatible(OpenVINO::Version version) const {
+        return impl()->isOpenVINOVersionCompatible(version);
+    }
+
     /// Sets board configuration
     void setBoardConfig(BoardConfig board) {
         impl()->setBoardConfig(board);
-    }
-
-    /// Sets implicit automatic calibration policy for this pipeline.
-    void setAutoCalibrationMode(AutoCalibrationMode mode) {
-        impl()->setAutoCalibrationMode(mode);
-    }
-
-    /// Gets implicit automatic calibration policy for this pipeline.
-    AutoCalibrationMode getAutoCalibrationMode() const {
-        return impl()->getAutoCalibrationMode();
     }
 
     /// Gets board configuration
@@ -767,197 +308,6 @@ class Pipeline {
     Device::Config getDeviceConfig() const {
         return impl()->getDeviceConfig();
     }
-
-    bool isRunning() const {
-        return impl()->isRunning();
-    }
-
-    bool isBuilt() const {
-        return impl()->isBuilt();
-    }
-
-    void build() {
-        impl()->build();
-    }
-    void buildDevice() {
-        impl()->buildingOnHost = false;
-        impl()->build();
-    }
-    void start() {
-        impl()->start();
-    }
-    void wait() {
-        impl()->wait();
-    }
-    void stop() {
-        impl()->stop();
-    }
-    void processTasks(bool waitForTasks = false, double timeoutSeconds = -1.0) {
-        impl()->processTasks(waitForTasks, timeoutSeconds);
-    }
-    void run() {
-        impl()->run();
-    }
-    /*
-     * @note In case of a host only pipeline, this function returns a nullptr
-     */
-    std::shared_ptr<Device> getDefaultDevice() {
-        return impl()->defaultDevice;
-    }
-    std::shared_ptr<const Device> getDefaultDevice() const {
-        return impl()->defaultDevice;
-    }
-
-    /**
-     * Add a device to the pipeline. The first device added to a pipeline created
-     * without an implicit device is promoted to the default device (master), so
-     * nodes created without an explicit device run on it.
-     *
-     * @param device Already constructed device to add
-     * @returns The added device
-     */
-    std::shared_ptr<Device> addDevice(std::shared_ptr<Device> device);
-
-    /**
-     * Construct a device from the given device info and add it to the pipeline.
-     *
-     * @param deviceInfo Device info to construct the device from
-     * @returns The constructed device
-     */
-    std::shared_ptr<Device> addDevice(const DeviceInfo& deviceInfo);
-
-    /**
-     * Construct a device from a device id, IP address or name and add it to the pipeline.
-     *
-     * @param idOrIpOrName Device id, IP address or name to construct the device from
-     * @returns The constructed device
-     */
-    std::shared_ptr<Device> addDevice(const std::string& idOrIpOrName);
-
-    /**
-     * Get all devices that are part of this pipeline - the default device (master)
-     * first, then the rest in registration order. Devices become part of the pipeline
-     * explicitly via addDevice or implicitly on first use by a node.
-     */
-    std::vector<std::shared_ptr<Device>> getDevices() const;
-
-    /**
-     * Get the pipeline-level state of a device: RUNNING, DISCONNECTED, RECONNECTING
-     * or FAILED. Losing a device does not stop the pipeline (its streams go idle)
-     * unless it was the last device alive or a device consuming other devices' streams.
-     * See setStopOnDeviceLoss to stop on any device loss.
-     */
-    DeviceState getDeviceState(const std::shared_ptr<Device>& device) const {
-        return impl()->getDeviceState(device);
-    }
-
-    /**
-     * Set a callback invoked on every device state transition. The callback is invoked
-     * from the affected device's monitor thread; do not block in it and do not call
-     * pipeline stop/start from it directly.
-     */
-    void setDeviceStateCallback(std::function<void(std::shared_ptr<Device>, DeviceState)> callback) {
-        impl()->setDeviceStateCallback(std::move(callback));
-    }
-
-    /**
-     * Stop the pipeline when any device that runs a node is lost for good (strict mode).
-     * Off by default (permissive mode): the pipeline keeps running, the lost device's
-     * streams go idle and it stops only when the last device alive or a device consuming
-     * other devices' streams is lost.
-     *
-     * A device is lost for good when its state becomes FAILED - after the reconnection
-     * attempts are exhausted. To stop as soon as a device disconnects, disable reconnection
-     * on the devices (Device::setMaxReconnectionAttempts(0)). Can be changed while the
-     * pipeline runs.
-     *
-     * @param stop True to stop the pipeline on any device loss
-     */
-    void setStopOnDeviceLoss(bool stop) {
-        impl()->stopOnDeviceLoss = stop;
-    }
-
-    /// Get whether the pipeline stops when any device that runs a node is lost for good
-    bool getStopOnDeviceLoss() const {
-        return impl()->stopOnDeviceLoss;
-    }
-
-    /// Set a camera IQ (Image Quality) tuning blob for all cameras of the given pipeline device
-    void setCameraTuningBlobPath(const std::shared_ptr<Device>& device, const fs::path& path);
-
-    /// Set a camera IQ (Image Quality) tuning blob for a specific board socket of the given pipeline device
-    void setCameraTuningBlobPath(const std::shared_ptr<Device>& device, CameraBoardSocket socket, const fs::path& path);
-
-    /// Set chunk size for splitting device-sent XLink packets for the given pipeline device; see the no-device overload
-    void setXLinkChunkSize(const std::shared_ptr<Device>& device, int sizeBytes);
-
-    /// Set the SIPP buffer size of the given pipeline device; see the no-device overload
-    void setSippBufferSize(const std::shared_ptr<Device>& device, int sizeBytes);
-
-    /// Set the SIPP DMA buffer size of the given pipeline device; see the no-device overload
-    void setSippDmaBufferSize(const std::shared_ptr<Device>& device, int sizeBytes);
-
-    /**
-     * Sets the board configuration for the given pipeline device. Board configuration
-     * is applied when a device boots, so for an already connected device it only takes
-     * effect on flows that (re)boot with this pipeline's configuration.
-     */
-    void setBoardConfig(const std::shared_ptr<Device>& device, const BoardConfig& board);
-
-    /// Gets the board configuration of the given pipeline device
-    BoardConfig getBoardConfig(const std::shared_ptr<Device>& device) const;
-
-    /// Get device configuration needed for this pipeline, for the given pipeline device
-    Device::Config getDeviceConfig(const std::shared_ptr<Device>& device) const;
-
-    /// Sets the calibration of the given pipeline device, overriding the one in eeprom
-    void setCalibrationData(const std::shared_ptr<Device>& device, const CalibrationHandler& calibrationDataHandler);
-
-    /// Check if calibration data is available on the given pipeline device
-    bool isCalibrationDataAvailable(const std::shared_ptr<Device>& device) const;
-
-    /// Gets the calibration data of the given pipeline device
-    CalibrationHandler getCalibrationData(const std::shared_ptr<Device>& device) const;
-
-    /// Sets the eeprom data of the given pipeline device
-    void setEepromData(const std::shared_ptr<Device>& device, const std::optional<EepromData>& eepromData);
-
-    /// Gets the eeprom data of the given pipeline device
-    std::optional<EepromData> getEepromData(const std::shared_ptr<Device>& device) const;
-
-    /// Gets the eeprom id of the given pipeline device
-    uint32_t getEepromId(const std::shared_ptr<Device>& device) const;
-
-    /// Sets device properties of the given pipeline device
-    void setDeviceProperties(const std::shared_ptr<Device>& device, const DeviceProperties& deviceProperties);
-
-    /// Gets device properties of the given pipeline device
-    DeviceProperties getDeviceProperties(const std::shared_ptr<Device>& device) const;
-
-    std::string getTelemetryPipelineId() const {
-        return impl()->telemetryPipelineId;
-    }
-
-    void addTask(std::function<void()> task) {
-        impl()->addTask(std::move(task));
-    }
-
-    /// Record and Replay
-    void enableHolisticRecord(const RecordConfig& config);
-    void enableHolisticReplay(const std::string& pathToRecording);
-    bool isHolisticRecordEnabled() const;
-    bool isHolisticReplayEnabled() const;
-
-    /// Pipeline debugging
-    void enablePipelineDebugging(bool enable = true);
-    bool isPipelineDebuggingEnabled() const;
-
-    // Access to pipeline state queues
-    std::shared_ptr<MessageQueue> getPipelineStateOut() const;
-    std::shared_ptr<InputQueue> getPipelineStateRequest() const;
-
-    // Pipeline state getters
-    PipelineStateApi getPipelineState();
 };
 
 }  // namespace dai

@@ -6,32 +6,24 @@
 namespace dai {
 namespace node {
 
-namespace {
+Script::Script(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId) : Script(par, nodeId, std::make_unique<Script::Properties>()) {}
+Script::Script(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props)
+    : NodeCRTP<Node, Script, ScriptProperties>(par, nodeId, std::move(props)),
+      inputs("io", Input(*this, "", Input::Type::SReceiver, {{DatatypeEnum::Buffer, true}})),
+      outputs("io", Output(*this, "", Output::Type::MSender, {{DatatypeEnum::Buffer, true}})) {
+    properties.scriptUri = "";
+    properties.scriptName = "<script>";
+    properties.processor = ProcessorType::LEON_MSS;
 
-std::string pathToUtf8String(const std::filesystem::path& path) {
-#ifdef _WIN32
-    const auto utf8 = path.u8string();
-    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
-#else
-    return path.string();
-#endif
+    setInputMapRefs(&inputs);
+    setOutputMapRefs(&outputs);
 }
 
-}  // namespace
-
-void Script::buildInternal() {}
-
-void Script::buildStage1() {
-    if(properties.scriptUri.empty()) {
-        throw std::runtime_error("No script set. Please set a script using setScriptPath or setScript.");
-    }
-}
-
-void Script::setScriptPath(const std::filesystem::path& path, const std::string& name) {
+void Script::setScriptPath(const dai::Path& path, const std::string& name) {
     properties.scriptUri = assetManager.set("__script", path)->getRelativeUri();
     scriptPath = path;
     if(name.empty()) {
-        properties.scriptName = pathToUtf8String(path);
+        properties.scriptName = path.u8string();
     } else {
         properties.scriptName = name;
     }
@@ -40,7 +32,7 @@ void Script::setScriptPath(const std::filesystem::path& path, const std::string&
 void Script::setScript(const std::string& script, const std::string& name) {
     std::vector<std::uint8_t> data{script.begin(), script.end()};
     properties.scriptUri = assetManager.set("__script", std::move(data))->getRelativeUri();
-    scriptPath = std::filesystem::path();
+    scriptPath = {};
     if(name.empty()) {
         properties.scriptName = "<script>";
     } else {
@@ -50,7 +42,7 @@ void Script::setScript(const std::string& script, const std::string& name) {
 
 void Script::setScript(const std::vector<std::uint8_t>& data, const std::string& name) {
     properties.scriptUri = assetManager.set("__script", std::move(data))->getRelativeUri();
-    scriptPath = std::filesystem::path();
+    scriptPath = {};
     if(name.empty()) {
         properties.scriptName = "<script>";
     } else {
@@ -62,7 +54,7 @@ void Script::setProcessor(ProcessorType proc) {
     properties.processor = proc;
 }
 
-std::filesystem::path Script::getScriptPath() const {
+dai::Path Script::getScriptPath() const {
     return scriptPath;
 }
 

@@ -2,7 +2,19 @@
 namespace dai {
 namespace node {
 
-void Warp::setOutputSize(const std::tuple<int, int>& size) {
+Warp::Warp(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId) : Warp(par, nodeId, std::make_unique<Warp::Properties>()) {}
+Warp::Warp(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props)
+    : NodeCRTP<Node, Warp, WarpProperties>(par, nodeId, std::move(props)) {
+    setInputRefs({&inputImage});
+    setOutputRefs({&out});
+}
+
+Warp::Properties& Warp::getProperties() {
+    // properties.initialConfig = *rawConfig;
+    return properties;
+}
+
+void Warp::setOutputSize(std::tuple<int, int> size) {
     properties.outputWidth = std::get<0>(size);
     properties.outputHeight = std::get<1>(size);
 }
@@ -30,12 +42,12 @@ void Warp::setWarpMesh(const float* meshData, int numMeshPoints, int width, int 
 
     // Align stride to 16B
     constexpr auto ALIGNMENT = 16;
-    size_t meshStride = ((size_t)((sizeof(float) * 2 * width)) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1);
+    size_t meshStride = ((size_t)((sizeof(Point2f) * width)) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1);
     // Specify final mesh size
     size_t meshSize = meshStride * height;
 
     // Create mesh data
-    asset.setData(std::vector<uint8_t>(meshSize));
+    asset.data = std::vector<uint8_t>(meshSize);
 
     // Fill out mesh points with stride
     for(int i = 0; i < height; i++) {
@@ -44,12 +56,12 @@ void Warp::setWarpMesh(const float* meshData, int numMeshPoints, int width, int 
             size_t inputMeshIndex = (i * width + j) * 2;  // 2 float values per point
 
             // get output offset
-            size_t outputMeshOffset = (meshStride * i) + (j * sizeof(float) * 2);
-            auto& point = reinterpret_cast<std::pair<float, float>&>(asset.getData().data()[outputMeshOffset]);
+            size_t outputMeshOffset = (meshStride * i) + (j * sizeof(Point2f));
+            auto& point = reinterpret_cast<Point2f&>(asset.data.data()[outputMeshOffset]);
 
             // Asign reversed mesh coordinates (HW specified)
-            point.first = meshData[inputMeshIndex + 1];
-            point.second = meshData[inputMeshIndex + 0];
+            point.x = meshData[inputMeshIndex + 1];
+            point.y = meshData[inputMeshIndex + 0];
         }
     }
 
@@ -59,20 +71,14 @@ void Warp::setWarpMesh(const float* meshData, int numMeshPoints, int width, int 
 }
 
 void Warp::setWarpMesh(const std::vector<Point2f>& meshData, int width, int height) {
-    // Convert to float array
-    std::vector<float> meshDataFloat(meshData.size() * 2);
-    for(size_t i = 0; i < meshData.size(); i++) {
-        meshDataFloat[i * 2 + 0] = meshData[i].x;
-        meshDataFloat[i * 2 + 1] = meshData[i].y;
-    }
-    setWarpMesh(reinterpret_cast<const float*>(meshDataFloat.data()), static_cast<int>(meshData.size()), width, height);
+    setWarpMesh(reinterpret_cast<const float*>(meshData.data()), static_cast<int>(meshData.size()), width, height);
 }
 
 void Warp::setWarpMesh(const std::vector<std::pair<float, float>>& meshData, int width, int height) {
     setWarpMesh(reinterpret_cast<const float*>(meshData.data()), static_cast<int>(meshData.size()), width, height);
 }
 
-void Warp::setHwIds(const std::vector<int>& ids) {
+void Warp::setHwIds(std::vector<int> ids) {
     properties.warpHwIds = ids;
 }
 

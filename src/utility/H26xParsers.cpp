@@ -3,8 +3,6 @@
 #include <cmath>
 #include <tuple>
 
-#include "depthai/utility/Memory.hpp"
-
 namespace dai {
 namespace utility {
 
@@ -79,7 +77,7 @@ SliceType getSliceType(uint num, Profile p) {
     }
 }
 
-bool scodeEq(buf& bs, uint pos, buf& code) {
+bool scodeEq(buf& bs, uint pos, buf code) {
     if(bs.size() - pos > code.size()) {
         for(uint i = 0; i < code.size(); ++i) {
             if(bs[pos + i] != code[i]) return false;

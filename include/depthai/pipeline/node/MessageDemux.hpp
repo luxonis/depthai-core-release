@@ -1,44 +1,30 @@
 #pragma once
 
-#include "depthai/pipeline/DeviceNode.hpp"
-#include "depthai/properties/MessageDemuxProperties.hpp"
+#include "depthai-shared/properties/MessageDemuxProperties.hpp"
+#include "depthai/pipeline/Node.hpp"
 
 namespace dai {
 namespace node {
 
-class MessageDemux : public DeviceNodeCRTP<DeviceNode, MessageDemux, MessageDemuxProperties>, public HostRunnable {
-   private:
-    bool runOnHostVar = false;
-
+class MessageDemux : public NodeCRTP<Node, MessageDemux, MessageDemuxProperties> {
    public:
     constexpr static const char* NAME = "MessageDemux";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+    MessageDemux(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+
+    MessageDemux(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
      * Input message of type MessageGroup
      */
-    Input input{*this, {"input", DEFAULT_GROUP, DEFAULT_BLOCKING, DEFAULT_QUEUE_SIZE, {{{DatatypeEnum::MessageGroup, false}}}, DEFAULT_WAIT_FOR_MESSAGE}};
+    Input input{*this, "input", Input::Type::SReceiver, {{DatatypeEnum::MessageGroup, false}}};
 
     /**
      * A map of outputs, where keys are same as in the input MessageGroup
      */
-    OutputMap outputs{*this, "outputs", {DEFAULT_NAME, DEFAULT_GROUP, {{{DatatypeEnum::Buffer, true}}}}};
+    OutputMap outputs;
 
     /**
-     * Specify whether to run on host or device
-     * By default, the node will run on device.
-     */
-    void setRunOnHost(bool runOnHost);
-
-    /**
-     * Check if the node is set to run on host
-     */
-    bool runOnHost() const override;
-
-    void run() override;
-
-    /**
-     * Specify on which processor the node should run. RVC2 only.
+     * Set on which processor the node should run
      * @param type Processor type - Leon CSS or Leon MSS
      */
     void setProcessor(ProcessorType type);

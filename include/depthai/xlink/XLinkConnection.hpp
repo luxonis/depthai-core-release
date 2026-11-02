@@ -4,7 +4,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <list>
 #include <mutex>
 #include <string>
@@ -14,6 +13,7 @@
 #include <vector>
 
 // project
+#include "depthai/utility/Path.hpp"
 #include "depthai/utility/ProfilingData.hpp"
 
 // Libraries
@@ -26,30 +26,19 @@ namespace dai {
  */
 struct DeviceInfo {
     DeviceInfo() = default;
-    DeviceInfo(std::string name, std::string deviceId, XLinkDeviceState_t state, XLinkProtocol_t protocol, XLinkPlatform_t platform, XLinkError_t status);
+    DeviceInfo(std::string name, std::string mxid, XLinkDeviceState_t state, XLinkProtocol_t protocol, XLinkPlatform_t platform, XLinkError_t status);
     /**
-     * Creates a DeviceInfo by checking whether supplied parameter is a DeviceID or IP/USB name.
-     * A dotted-quad name ("10.12.234.143") sets protocol TCP_IP, any other name keeps ANY_PROTOCOL.
-     * See XLinkConnection::findFirstSuitableDevice for how a USB port path that looks like an
-     * IPv4 address ("1.2.1.4") is still found.
-     * @param deviceIdOrName Either DeviceId, IP Address or USB port name
+     * Creates a DeviceInfo by checking whether supplied parameter is a MXID or IP/USB name
+     * @param mxidOrName Either MXID, IP Address or USB port name
      */
-    explicit DeviceInfo(std::string deviceIdOrName);
-
-    /**
-     * DeviceInfo of the local device reachable over shared memory (a pipeline process
-     * running on the device itself). Booted state and LOCAL_SHDMEM protocol are set,
-     * so constructing a Device from it skips the network device search.
-     */
-    static DeviceInfo local();
+    explicit DeviceInfo(std::string mxidOrName);
     explicit DeviceInfo(const deviceDesc_t& desc);
     deviceDesc_t getXLinkDeviceDesc() const;
-    [[deprecated("Use getDeviceId() instead")]] std::string getMxId() const;
-    std::string getDeviceId() const;
+    std::string getMxId() const;
     std::string toString() const;
 
-    std::string name;
-    std::string deviceId;
+    std::string name = "";
+    std::string mxid = "";
     XLinkDeviceState_t state = X_LINK_ANY_STATE;
     XLinkProtocol_t protocol = X_LINK_ANY_PROTOCOL;
     XLinkPlatform_t platform = X_LINK_ANY_PLATFORM;
@@ -68,11 +57,12 @@ class XLinkConnection {
      *
      * @param state State which the devices should be in
      * @param skipInvalidDevices whether or not to skip over devices that cannot be successfully communicated with
+     * @param platform Which platforms to search for
      * @returns Vector of connected device information
      */
     static std::vector<DeviceInfo> getAllConnectedDevices(XLinkDeviceState_t state = X_LINK_ANY_STATE,
                                                           bool skipInvalidDevices = true,
-                                                          int timeoutMs = XLINK_DEVICE_DEFAULT_SEARCH_TIMEOUT_MS);
+                                                          XLinkPlatform_t platform = X_LINK_MYRIAD_X);
 
     /**
      * Returns information of first device with given state
@@ -82,27 +72,13 @@ class XLinkConnection {
     static std::tuple<bool, DeviceInfo> getFirstDevice(XLinkDeviceState_t state = X_LINK_ANY_STATE, bool skipInvalidDevices = true);
 
     /**
-     * Finds a device by Device ID. Example: 14442C10D13EABCE00
-     * @param deviceId Device ID which uniquely specifies a device
+     * Finds a device by MX ID. Example: 14442C10D13EABCE00
+     * @param mxId MyraidX ID which uniquely specifies a device
      * @param state Which state should the device be in
      * @param skipInvalidDevices Whether or not to skip devices that cannot be fully detected
      * @returns Tuple of bool and DeviceInfo. Bool specifies if device was found. DeviceInfo specifies the found device
      */
-    static std::tuple<bool, DeviceInfo> getDeviceById(const std::string& deviceId, XLinkDeviceState_t state = X_LINK_ANY_STATE, bool skipInvalidDevice = true);
-
-    /**
-     * Finds the first device matching the given DeviceInfo (a single XLink search pass).
-     *
-     * A name-only DeviceInfo whose dotted-quad name was read as an IPv4 address
-     * (DeviceInfo(std::string) sets protocol TCP_IP) is retried as a USB port path
-     * ("<bus>.<port>...", e.g. "1.2.1.4") when no network device answers, so a device
-     * behind USB hubs stays reachable by its port path. Device ids, hostnames and any
-     * other protocol are searched exactly as given.
-     * @param deviceInfo Requirements the device has to match (name, deviceId, state, protocol, platform)
-     * @param foundDesc Description of the found device, valid on X_LINK_SUCCESS
-     * @returns X_LINK_SUCCESS if a device was found, X_LINK_DEVICE_NOT_FOUND otherwise
-     */
-    static XLinkError_t findFirstSuitableDevice(const DeviceInfo& deviceInfo, deviceDesc_t& foundDesc);
+    static std::tuple<bool, DeviceInfo> getDeviceByMxId(std::string mxId, XLinkDeviceState_t state = X_LINK_ANY_STATE, bool skipInvalidDevice = true);
 
     /**
      * Tries booting the given device into bootloader state
@@ -120,7 +96,7 @@ class XLinkConnection {
     static ProfilingData getGlobalProfilingData();
 
     XLinkConnection(const DeviceInfo& deviceDesc, std::vector<std::uint8_t> mvcmdBinary, XLinkDeviceState_t expectedState = X_LINK_BOOTED);
-    XLinkConnection(const DeviceInfo& deviceDesc, std::filesystem::path pathToMvcmd, XLinkDeviceState_t expectedState = X_LINK_BOOTED);
+    XLinkConnection(const DeviceInfo& deviceDesc, dai::Path pathToMvcmd, XLinkDeviceState_t expectedState = X_LINK_BOOTED);
     explicit XLinkConnection(const DeviceInfo& deviceDesc, XLinkDeviceState_t expectedState = X_LINK_BOOTED);
 
     ~XLinkConnection();
@@ -129,12 +105,6 @@ class XLinkConnection {
     bool getRebootOnDestruction() const;
 
     int getLinkId() const;
-
-    /**
-     * Get device information of this connection. The protocol reflects the actually
-     * negotiated protocol (e.g. TCP_IP_OR_LOCAL_SHDMEM resolves to the transport in use).
-     */
-    DeviceInfo getDeviceInfo() const;
 
     /**
      * Explicitly closes xlink connection.
@@ -163,7 +133,7 @@ class XLinkConnection {
     friend struct XLinkReadError;
     friend struct XLinkWriteError;
     // static
-    static bool bootAvailableDevice(const deviceDesc_t& deviceToBoot, const std::filesystem::path& pathToMvcmd);
+    static bool bootAvailableDevice(const deviceDesc_t& deviceToBoot, const dai::Path& pathToMvcmd);
     static bool bootAvailableDevice(const deviceDesc_t& deviceToBoot, std::vector<std::uint8_t>& mvcmd);
     static std::string convertErrorCodeToString(XLinkError_t errorCode);
 
@@ -171,7 +141,7 @@ class XLinkConnection {
 
     bool bootDevice = true;
     bool bootWithPath = true;
-    std::filesystem::path pathToMvcmd;
+    dai::Path pathToMvcmd;
     std::vector<std::uint8_t> mvcmd;
 
     bool rebootOnDestruction{true};

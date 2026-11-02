@@ -2,31 +2,25 @@
 
 namespace dai {
 
-ToFConfig::~ToFConfig() = default;
-
-void ToFConfig::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
-    metadata = utility::serialize(*this);
-    datatype = DatatypeEnum::ToFConfig;
+std::shared_ptr<RawBuffer> ToFConfig::serialize() const {
+    return raw;
 }
 
-ToFConfig& ToFConfig::setMedianFilter(filters::params::MedianFilter median) {
-    this->median = median;
+ToFConfig::ToFConfig() : Buffer(std::make_shared<RawToFConfig>()), cfg(*dynamic_cast<RawToFConfig*>(raw.get())) {}
+ToFConfig::ToFConfig(std::shared_ptr<RawToFConfig> ptr) : Buffer(std::move(ptr)), cfg(*dynamic_cast<RawToFConfig*>(raw.get())) {}
+
+dai::RawToFConfig ToFConfig::get() const {
+    return cfg;
+}
+
+ToFConfig& ToFConfig::set(dai::RawToFConfig config) {
+    cfg = config;
     return *this;
 }
 
-void ToFConfig::setProfilePreset(Profile prof) {
-    profile = prof;
-    switch(prof) {
-        case Profile::LOW_RANGE: {
-            this->phaseUnwrapErrorThreshold = 50;
-        } break;
-        case Profile::MID_RANGE: {
-            this->phaseUnwrapErrorThreshold = 75;
-        } break;
-        case Profile::HIGH_RANGE: {
-            this->phaseUnwrapErrorThreshold = 130;
-        } break;
-    }
+ToFConfig& ToFConfig::setMedianFilter(MedianFilter median) {
+    cfg.median = median;
+    return *this;
 }
 
 }  // namespace dai

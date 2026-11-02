@@ -1,24 +1,12 @@
 #pragma once
 
-// std
-#include <cstdint>
 #include <ostream>
 
-namespace dai {
+#include "depthai-shared/common/UsbSpeed.hpp"
 
-/**
- * Get USB Speed
- */
-
-enum class UsbSpeed : int32_t { UNKNOWN, LOW, FULL, HIGH, SUPER, SUPER_PLUS };
-
-}  // namespace dai
-
-/**
- * Get USB Speed
- */
-inline std::ostream& operator<<(std::ostream& out, const dai::UsbSpeed& usbSpeed) {
-    switch(usbSpeed) {
+// Global namespace
+inline std::ostream& operator<<(std::ostream& out, const dai::UsbSpeed& speed) {
+    switch(speed) {
         case dai::UsbSpeed::UNKNOWN:
             out << "UNKNOWN";
             break;

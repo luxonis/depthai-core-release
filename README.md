@@ -1,142 +1,46 @@
-# DepthAI Library
+# DepthAI C++ Library
 
 [![Forum](https://img.shields.io/badge/Forum-discuss-orange)](https://discuss.luxonis.com/)
-[![Docs](https://img.shields.io/badge/Docs-DepthAI_API-yellow)](https://docs.luxonis.com/software-v3/)
+[![Docs](https://img.shields.io/badge/Docs-DepthAI_API-yellow)](https://docs.luxonis.com/projects/api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-DepthAI library for interfacing with Luxonis DepthAI hardware. It's written in C++ and offers Python bindings out of the box.
+Core C++ library
 
->  **Important — You’re viewing the `v3.x.y` branch.**
+>  **Important — You’re viewing the `v2.x.y` branch.**
 >
-> * For production projects that still rely on **v2**, check out the
->   [`v2_stable` branch](https://github.com/luxonis/depthai-core/tree/v2_stable).
-> * Need to migrate? Follow the step-by-step [v2 → v3 Porting Guide](./V2V3PortinGuide.md).
+> * For the latest version with support for RVC4 devices, please switch to the
+>   [`main` branch](https://github.com/luxonis/depthai-core/tree/main).
 
 ## Documentation
-Documentation is available over at [Luxonis DepthAI API](https://docs.luxonis.com/software-v3/depthai/)
 
-## Examples
-Examples for both C++ and Python are available in the `examples` folder. To see how to build and run them see [README.md](./examples/README.md) for more information.
-To build the examples in C++ configure with the following option added:
-```
-cmake -S. -Bbuild -D'DEPTHAI_BUILD_EXAMPLES=ON'
-cmake --build build
-```
+Documentation is available over at [Luxonis DepthAI API](https://docs.luxonis.com/projects/api/en/latest/)
 
-## Beta features
-The `beta` namespace is a staging area for experimental DepthAI features. It
-allows new features to be developed and iterated on quickly before they are
-promoted to the main `depthai` namespace.
-
-Beta features are well-developed, but minor API and behavioral changes may occur between DepthAI releases without notice.
-
-In C++, beta nodes are available under `dai::beta::node`:
-
-```cpp
-auto node = pipeline.create<dai::beta::node::ImgDetectionsFilter>();
-```
-
-In Python, they are available under `dai.beta.node`:
-
-```python
-node = pipeline.create(dai.beta.node.ImgDetectionsFilter)
-```
-
-On-device execution of Beta nodes is supported only on RVC4. If running Beta nodes on RVC2, DepthAI
-automatically configures beta nodes to run on the host.
-
-## Multiple devices in one pipeline
-
-A single `dai::Pipeline` can drive several devices. Devices become part of the pipeline
-explicitly with `addDevice(...)` or implicitly when a node is created with an explicit
-device; the first device becomes the master (default device) used by nodes created
-without one.
-
-```python
-pipeline = dai.Pipeline(False)                    # no implicit device
-devA = pipeline.addDevice("10.0.0.10")            # promoted to master
-devB = pipeline.addDevice("10.0.0.11")
-
-camA = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)          # master
-camB = pipeline.create(dai.node.Camera, device=devB).build(dai.CameraBoardSocket.CAM_A)
-
-sync = pipeline.create(dai.node.Sync)             # host Sync aligns both streams
-sync.setRunOnHost(True)
-camA.requestOutput((640, 400)).link(sync.inputs["a"])
-camB.requestOutput((640, 400)).link(sync.inputs["b"])
-```
-
-Key behaviors:
-
-- **Device-to-device links.** Linking an output on device A to an input on device B
-  inserts a host relay automatically at build time.
-- **Partial operation.** Losing one device leaves its streams idle while the rest of
-  the pipeline keeps running; the lost device reconnects on its own. Observe this via
-  `pipeline.getDeviceState(device)` and `pipeline.setDeviceStateCallback(...)`. The
-  pipeline stops itself only when the last device is gone or when a device that
-  consumes another device's streams is lost for good. Call
-  `pipeline.setStopOnDeviceLoss(True)` to stop when any device that runs a node is
-  lost for good (reconnection exhausted); with `device.setMaxReconnectionAttempts(0)`
-  it stops as soon as the disconnect is detected.
-- **Time.** `getTimestamp()` values are host-clock based and comparable across
-  devices; per-device `getTimestampDevice()` values are not (a host `Sync` node
-  rejects the DEVICE timestamp source across devices at build).
-- **Source devices.** After build, a host node can ask `input.getSourceDevice()` /
-  `inputs.getSourceDevices()` which device produces each of its inputs.
-- **Per-device configuration.** Every pipeline-level device setter/getter has a
-  `(device, ...)` overload; the form without a device targets the master.
-- Holistic record/replay is not supported with more than one device yet.
-
-See `examples/{cpp,python}/.../MultiDevice/` for frame sync, a device-to-device relay
-and a multi-device host node.
-
-### Running on the device (standalone)
-
-The pipeline process may itself run on an RVC4 and use the local device over shared
-memory, with further devices attached over the network:
-
-```python
-local = pipeline.addDevice(dai.DeviceInfo.local())   # this RVC4, no search timeout
-remote = pipeline.addDevice("10.0.0.11")             # a remote device over TCP
-```
-
-Requirements: outbound TCP to each remote device's gate (port 11492) and XLink ports,
-and `/tmp` shared with the device runtime for the local socket. Note that
-`DEPTHAI_PROTOCOL` and `DEPTHAI_DEVICE_ID_LIST` are process-wide discovery filters -
-leave them unset (`any`) when mixing local and remote devices.
+## Disclaimer
+DepthAI library doesn't yet provide API stability guarantees. While we take care to properly deprecate old functions, some changes might still be breaking. We expect to provide API stability from version 3.0.0 onwards.
 
 ## Dependencies
-- CMake >= 3.20
-- C/C++17 compiler
-- [Linux] libudev >= 1.0.0
-- [optional] OpenCV 4 (required if building examples and for record and replay)
+- CMake >= 3.10
+- C/C++14 compiler
+- [optional] OpenCV 4 (required if building examples)
 - [optional] PCL (required for point cloud example)
-
-To install libudev on Debian based systems (Ubuntu, etc.): `sudo apt install libudev-dev`
 
 To install OpenCV:
 MacOS: `brew install opencv`
 Linux: `sudo apt install libopencv-dev`
-Windows: `choco install opencv`
 
 To install PCL:
 MacOS: `brew install pcl`
 Linux: `sudo apt install libpcl-dev`
 
-## Using Python bindings
-Installing the latest pre-released version of the library can be done with:
-```
-python3 -m pip install --extra-index-url https://artifacts.luxonis.com/artifactory/luxonis-python-release-local/ --pre -U depthai
-```
-
-or by running:
-```
-python3 examples/python/install_requirements.py on the branch you want to install
-```
-
-For more specific information about Python bindings, see [Python README](./bindings/python/README.md).
-
-
+> ℹ️ On Linux distributions based on RPMs, you need to install `perl-core` required by OpenSSL dependency.
+>```
+>sudo yum install perl-core
+>```
+>
+> Another option is to disable CURL support by setting `DEPTHAI_ENABLE_CURL=OFF` when configuring CMake.
+> ```
+> cmake -S. -Bbuild -D'DEPTHAI_ENABLE_CURL=OFF'
+> ```
 ## Building
 
 Make sure submodules are updated
@@ -147,86 +51,29 @@ git submodule update --init --recursive
 Then configure and build
 
 ```
-cmake -S . -B build
-cmake --build build --parallel [num CPU cores]
+cmake -S. -Bbuild
+cmake --build build
 ```
-On Windows it's often required to specify the location of the OpenCV installation. In case you used chocolatey to install OpenCV, you can use the following command:
 
-```
-cmake -S . -B build -DOpenCV_DIR=C:/tools/opencv/build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --parallel [num CPU cores]
-```
-> ℹ️ To speed up build times, use `cmake --build build --parallel [num CPU cores]`.
+> ℹ️ To speed up build times, use `cmake --build build --parallel [num CPU cores]` (CMake >= 3.12).
+For older versions use: Linux/macOS: `cmake --build build -- -j[num CPU cores]`, MSVC: `cmake --build build -- /MP[num CPU cores]`
+
+> ⚠️ If any CMake commands error with `CMake Error: The source directory "" does not exist.` replace argument `-S` with `-H`
 
 ### Dynamic library
 
-To build a dynamic version of the library configure with the following option added
+To build dynamic version of library configure with following option added
 ```
-cmake -S . -B build -D'BUILD_SHARED_LIBS=ON'
-cmake --build build --parallel [num CPU cores]
+cmake -S. -Bbuild -D'BUILD_SHARED_LIBS=ON'
+cmake --build build
 ```
-
-## Installation and Integration
-Installation of the DepthAI library is currently only available as a dynamic library. To install the library, use the following command:
-
-```
-cmake -S . -B build -D'BUILD_SHARED_LIBS=ON' -D'CMAKE_INSTALL_PREFIX=[path/to/install/dir]'
-cmake --build build --target install --parallel [num CPU cores]
-```
-
-> ℹ️ Make sure to check out our [template C++ project](https://github.com/luxonis/depthai-core-example).
-
-### Verifying installation
-To verify the installation works as expected, you can test if the integration project compiles and runs.
-This is done by running the following command:
-
-```
-cmake -S tests/integration . -B build_integration -D'CMAKE_PREFIX_PATH=[path/to/install/dir]'
-cmake --build build_integration --target test --parallel [num CPU cores]
-```
-
-### Prebuilt library on Windows
-Under releases you may find prebuilt library for Windows, for use in either integration method. See [Releases](https://github.com/luxonis/depthai-core/releases)
-
-### Using find_package for integration
-
-> ℹ️ Due to a non-trivial dependency tree, the integration with `add_subdirectory` is not supported. Use `find_package` instead.
-
-First install the library as described in [Installation and Integration](#installation-and-integration) section.
-
-Then in your CMake project, add the following lines to your `CMakeLists.txt` file:
-
-```cmake
-
-# Add `find_package` and `target_link_libraries` to your project
-
-find_package(depthai CONFIG REQUIRED)
-...
-target_link_libraries([my-app] PRIVATE depthai::core)
-```
-
-And point CMake to your install directory:
-```
--D'CMAKE_PREFIX_PATH=[path/to/install/dir]'
-```
-
-
-If library was installed to default search path like `/usr/local` on Linux, specifying `CMAKE_PREFIX_PATH` isn't necessary as CMake will find it automatically.
-
-
-### Vcpkg integration
-For VCPKG integration, check out the example [here](https://github.com/luxonis/depthai_vcpkg_example).
-Note that the VCPKG integration is using a custom branch of DepthAI and we plan to integrate the support for it into the main branch in the future and add it to the official VCPKG repository.
-
-
-### Telemetry
-We collect some anonymized telemetry to understand how users use the library so we can improve it. This mainly includes which nodes are used most often, how long sessions last, and similar usage information. If you prefer, you can disable telemetry by setting the environment variable `DEPTHAI_TELEMETRY=0`.
 
 
 ### Android
-Android is not yet supported on the v3.x.y version of DepthAI. You can still use the v2.x.y version of DepthAI for RVC2 devices or open an issue on this repository to request Android support for v3.x.y.
 
-<!-- Steps:
+Android is supported to some extent but not actively pursued nor tested. PRs with any improvements are welcome.
+
+Steps:
 
  - Install Android NDK (for example via Android Studio).
  - Set the NDK path:
@@ -241,15 +88,75 @@ export NDK=$ANDROID_HOME/ndk/23.1.7779620/ # Check version
 ```
 cmake -S. -Bbuild -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=armeabi-v7a -DANDROID_PLATFORM=android-25
 cmake --build build
-``` -->
+```
 
 
+## Running examples
 
-<!-- ### Non-CMake integration (Visual Studio, Xcode, CodeBlocks, ...)
+To build the examples configure with following option added
+```
+cmake -S. -Bbuild -D'DEPTHAI_BUILD_EXAMPLES=ON'
+cmake --build build
+```
 
-To integrate into a different build system than CMake, the preferred way is to compile as a dynamic library and set the correct build options.
+Then navigate to `build/examples` folder and run a preferred example
+```
+cd build/examples
+./MobileNet/rgb_mobilenet
+```
+
+> ℹ️ Multi-Config generators (like Visual Studio on Windows) will have the examples built in `build/examples/MobileNet/[Debug/Release/...]/rgb_mobilenet`
+
+## Integration
+
+Under releases you may find prebuilt library for Windows, for use in either integration method. See [Releases](https://github.com/luxonis/depthai-core/releases)
+
+### CMake
+
+Targets available to link to are:
+ - depthai::core - Core library, without using opencv internally
+ - depthai::opencv - Core + support for opencv related helper functions (requires OpenCV4)
+
+#### Using find_package
+
+Build static or dynamic version of library (See: [Building](#building) and optionally [Installing](#installing))
+
+Add `find_package` and `target_link_libraries` to your project
+```
+find_package(depthai CONFIG REQUIRED)
+...
+target_link_libraries([my-app] PRIVATE depthai::opencv)
+```
+
+And point CMake to either build directory or install directory:
+```
+-D'depthai_DIR=depthai-core/build'
+```
+or
+```
+-D'depthai_DIR=depthai-core/build/install/lib/cmake/depthai'
+```
+
+If library was installed to default search path like `/usr/local` on Linux, specifying `depthai_DIR` isn't necessary as CMake will find it automatically.
+
+#### Using add_subdirectory
+
+This method is more intrusive but simpler as it doesn't require building the library separately.
+
+Add `add_subdirectory` which points to `depthai-core` folder **before** project command. Then link to any required targets.
+```
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/depthai-core EXCLUDE_FROM_ALL)
+...
+project(my-app)
+...
+target_link_libraries([my-app] PRIVATE depthai::opencv)
+```
+
+### Non-CMake integration (Visual Studio, Xcode, CodeBlocks, ...)
+
+To integrate into a different build system than CMake, prefered way is compiling as dynamic library and setting correct build options.
 1. First build as dynamic library: [Building Dynamic library](#dynamic-library)
-2. Then install: [Installing](#installation-and-integration)
+2. Then install: [Installing](#installing)
 
 In your non-CMake project (new Visual Studio project, ...)
 1. Set needed library directories:
@@ -263,63 +170,49 @@ In your non-CMake project (new Visual Studio project, ...)
 > ℹ️ Threading library might need to be linked to explicitly.
 
 > ℹ️ Check `build/depthai-core-integration.txt` or `build/depthai-opencv-integration.txt` for up to date define options.
-The generated integration file also specifies include paths without requiring installation. -->
+The generated integration file also specifies include paths without requiring installation.
 
-## CMake options
-Many features of the library can be disabled or enabled using CMake options.
-One common option when building the library tests and examples is `DEPTHAI_VCPKG_INTERNAL_ONLY=OFF` which installs a predictable version of OpenCV, PCL and other optional dependencies we also use on the libraries interface.
+## Installing
 
-> ℹ️ When `DEPTHAI_VCPKG_INTERNAL_ONLY=OFF` is used, the library cannot be installed (apart from being installed in the scope of the vcpkg package manager).
+To install specify optional prefix and build target install
+```
+cmake -S. -Bbuild -D'CMAKE_INSTALL_PREFIX=[path/to/install/dir]'
+cmake --build build --target install
+```
 
-For a full list of options, see `cmake/depthaiOptions.cmake` file.
+If `CMAKE_INSTALL_PREFIX` isn't specified, the library is installed under build folder `install`.
+
 
 ## Environment variables
 
 The following environment variables can be set to alter default behavior of the library without having to recompile
 
-| Environment variable                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DEPTHAI_LEVEL                        | Sets logging verbosity, 'trace', 'debug', 'info', 'warn', 'error' and 'off'                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| XLINK_LEVEL                          | Sets logging verbosity of XLink library, 'debug'. 'info', 'warn', 'error', 'fatal' and 'off'                                                                                                                                                                                                                                                                                                                                                                                                      |
-| DEPTHAI_INSTALL_SIGNAL_HANDLER       | Set to 0 to disable installing Backward signal handler for stack trace printing                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| DEPTHAI_DEBUGGER                     | Enables debugger-friendly behavior. `ON` is equivalent to `DEPTHAI_WATCHDOG=0` and `DEPTHAI_RPC_READ_TIMEOUT=0`. Explicit values of those variables still take precedence.                                                                                                                                                                                                                                                                                                                        |
-| DEPTHAI_WATCHDOG                     | Sets device watchdog timeout. Useful for debugging (`DEPTHAI_WATCHDOG=0`), to prevent device reset while the process is paused.                                                                                                                                                                                                                                                                                                                                                                   |
-| DEPTHAI_WATCHDOG_INITIAL_DELAY       | Specifies delay after which the device watchdog starts.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| DEPTHAI_SEARCH_TIMEOUT               | Specifies timeout in milliseconds for device searching in blocking functions.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| DEPTHAI_CONNECT_TIMEOUT              | Specifies timeout in milliseconds for establishing a connection to a given device.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| DEPTHAI_BOOTUP_TIMEOUT               | Specifies timeout in milliseconds for waiting the device to boot after sending the binary.                                                                                                                                                                                                                                                                                                                                                                                                        |
-| DEPTHAI_RECONNECT_TIMEOUT            | Specifies timeout in milliseconds for reconnecting to a device after a connection loss. If set to 0, reconnect is disabled.                                                                                                                                                                                                                                                                                                                                                                       |
-| DEPTHAI_PROTOCOL                     | Restricts default search to the specified protocol. Options: `any`, `usb`, `tcpip`, `tcpshd`.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| DEPTHAI_PLATFORM                     | Restricts default search to the specified platform. Options: `any`, `rvc2`, `rvc3`, `rvc4`.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| DEPTHAI_RPC_READ_TIMEOUT             | Specifies timeout in milliseconds for reading RPC responses. If 0, wait indefinitely.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DEPTHAI_RPC_WRITE_TIMEOUT            | Specifies timeout in milliseconds for writing RPC requests. If 0, wait indefinitely.                                                                                                                                                                                                                                                                                                                                                                                                              |
-| DEPTHAI_DEVICE_MXID_LIST             | Restricts default search to the specified MXIDs. Accepts comma separated list of MXIDs. Lists filter results in an "AND" manner and not "OR"                                                                                                                                                                                                                                                                                                                                                      |
-| DEPTHAI_DEVICE_ID_LIST               | Alias to MXID list. Lists filter results in an "AND" manner and not "OR"                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| DEPTHAI_DEVICE_NAME_LIST             | Restricts default search to the specified NAMEs. Accepts comma separated list of NAMEs. Lists filter results in an "AND" manner and not "OR". It also looks for NAMEs outside of the host's subnet in case of tcpip.                                                                                                                                                                                                                                                                              |
-| DEPTHAI_DEVICE_BINARY                | Overrides device Firmware binary. Mostly for internal debugging purposes.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| DEPTHAI_DEVICE_RVC4_FWP              | Overrides device RVC4 Firmware binary. Mostly for internal debugging purposes.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| DEPTHAI_BOOTLOADER_BINARY_USB        | Overrides device USB Bootloader binary. Mostly for internal debugging purposes.                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| DEPTHAI_BOOTLOADER_BINARY_ETH        | Overrides device Network Bootloader binary. Mostly for internal debugging purposes.                                                                                                                                                                                                                                                                                                                                                                                                               |
-| DEPTHAI_ALLOW_FACTORY_FLASHING       | Internal use only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| DEPTHAI_LIBUSB_ANDROID_JAVAVM        | JavaVM pointer that is passed to libusb for rootless Android interaction with devices. Interpreted as decimal value of uintptr_t                                                                                                                                                                                                                                                                                                                                                                  |
-| DEPTHAI_CACHE_DIR                    | Overrides the default DepthAI cache root directory. Default: macOS `~/Library/Caches/depthai`, Windows `%LOCALAPPDATA%\\depthai\\cache`, Linux `${XDG_CACHE_HOME:-~/.cache}/depthai`                                                                                                                                                                                                                                                                                                              |
-| DEPTHAI_CRASHDUMP                    | Directory in which to save the crash dump. Automatic crash dump collection is disabled if set to 0.                                                                                                                                                                                                                                                                                                                                                                                               |
-| DEPTHAI_CRASHDUMP_TIMEOUT            | Specifies the duration in milliseconds to wait for device reboot when obtaining a crash dump. Automatic crash dump collection is disabled if set to 0.                                                                                                                                                                                                                                                                                                                                            |
-| DEPTHAI_TELEMETRY                    | Telemetry is enabled by default. Set to `0` or `false` to disable event capture.                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| DEPTHAI_TELEMETRY_URL                | Overrides the telemetry capture URL.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| DEPTHAI_TELEMETRY_API_KEY            | Overrides the telemetry API key.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| DEPTHAI_DISABLE_CRASHDUMP_COLLECTION | Disables automatic crash dump collection used to improve the library                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| DEPTHAI_HUB_EVENTS_BASE_URL          | URL for events of the Luxonis Hub                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| DEPTHAI_HUB_API_KEY                  | API key for the Luxonis Hub                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| DEPTHAI_ZOO_INTERNET_CHECK           | (Default) 1 - perform internet check, if available, download the newest model version 0 - skip internet check and use cached model                                                                                                                                                                                                                                                                                                                                                                |
-| DEPTHAI_ZOO_INTERNET_CHECK_TIMEOUT   | (Default) 1000 - timeout in milliseconds for the internet check                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| DEPTHAI_ZOO_CACHE_PATH               | (Default) `${DEPTHAI_CACHE_DIR}/models` - Folder where cached zoo models are stored                                                                                                                                                                                                                                                                                                                                                                                                               |
-| DEPTHAI_ZOO_MODELS_PATH              | (Default) depthai_models - Folder where zoo model description files are stored                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| DEPTHAI_RECORD                       | Enables holistic record to the specified directory.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| DEPTHAI_REPLAY                       | Replays holistic replay from the specified file or directory.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| DEPTHAI_PROFILING                    | Enables runtime profiling of data transfer between the host and connected devices. Set to 1 to enable. Requires DEPTHAI_LEVEL=debug or lower to print.                                                                                                                                                                                                                                                                                                                                            |
-| DEPTHAI_PIPELINE_DEBUGGING           | Enables pipeline debugging with state dumps. DEPTHAI_LEVEL=trace is required to print the state dumps.                                                                                                                                                                                                                                                                                                                                                                                            |
-| DEPTHAI_AUTOCALIBRATION              | Runs recalibration of the stereo pair and, by default, flashes successful calibration to non-volatile memory (EEPROM). `CONTINUOUS`: runs check repetitively; `ON_START`: runs calibration only at the start of the pipeline; `OFF`: no recalibration. The same mode can be configured from code with `pipeline.setAutoCalibrationMode(...)`. If this environment variable is set, it overrides the pipeline-set value. AutoCalibration currently initializes only for stereo inputs at 1280x800. |
+| Environment variable  | Description   |
+|--------------|-----------|
+| DEPTHAI_LEVEL | Sets logging verbosity, 'trace', 'debug', 'warn', 'error' and 'off' |
+| XLINK_LEVEL | Sets logging verbosity of XLink library, 'debug'. 'info', 'warn', 'error', 'fatal' and 'off' |
+| DEPTHAI_INSTALL_SIGNAL_HANDLER | Set to 0 to disable installing Backward signal handler for stack trace printing |
+| DEPTHAI_WATCHDOG | Sets device watchdog timeout. Useful for debugging (`DEPTHAI_WATCHDOG=0`), to prevent device reset while the process is paused. |
+| DEPTHAI_WATCHDOG_INITIAL_DELAY | Specifies delay after which the device watchdog starts. |
+| DEPTHAI_SEARCH_TIMEOUT | Specifies timeout in milliseconds for device searching in blocking functions. |
+| DEPTHAI_CONNECT_TIMEOUT | Specifies timeout in milliseconds for establishing a connection to a given device. |
+| DEPTHAI_BOOTUP_TIMEOUT | Specifies timeout in milliseconds for waiting the device to boot after sending the binary. |
+| DEPTHAI_RPC_READ_TIMEOUT | Specifies timeout in milliseconds for reading RPC responses. If 0, wait indefinitely. |
+| DEPTHAI_RPC_WRITE_TIMEOUT | Specifies timeout in milliseconds for writing RPC requests. If 0, wait indefinitely. |
+| DEPTHAI_PROTOCOL | Restricts default search to the specified protocol. Options: any, usb, tcpip. |
+| DEPTHAI_DEVICE_MXID_LIST | Restricts default search to the specified MXIDs. Accepts comma separated list of MXIDs. Lists filter results in an "AND" manner and not "OR" |
+| DEPTHAI_DEVICE_ID_LIST | Alias to MXID list. Lists filter results in an "AND" manner and not "OR" |
+| DEPTHAI_DEVICE_NAME_LIST | Restricts default search to the specified NAMEs. Accepts comma separated list of NAMEs. Lists filter results in an "AND" manner and not "OR" |
+| DEPTHAI_DEVICE_BINARY | Overrides device Firmware binary. Mostly for internal debugging purposes. |
+| DEPTHAI_BOOTLOADER_BINARY_USB | Overrides device USB Bootloader binary. Mostly for internal debugging purposes. |
+| DEPTHAI_BOOTLOADER_BINARY_ETH | Overrides device Network Bootloader binary. Mostly for internal debugging purposes. |
+| DEPTHAI_ALLOW_FACTORY_FLASHING | Internal use only |
+| DEPTHAI_LIBUSB_ANDROID_JAVAVM | JavaVM pointer that is passed to libusb for rootless Android interaction with devices. Interpreted as decimal value of uintptr_t |
+| DEPTHAI_CRASHDUMP | Directory in which to save the crash dump. |
+| DEPTHAI_CRASHDUMP_TIMEOUT | Specifies the duration in seconds to wait for device reboot when obtaining a crash dump. Crash dump retrieval disabled if 0. |
+| DEPTHAI_ENABLE_ANALYTICS_COLLECTION | Enables automatic analytics collection (pipeline schemas) used to improve the library |
+| DEPTHAI_DISABLE_CRASHDUMP_COLLECTION | Disables automatic crash dump collection used to improve the library |
+| DEPTHAI_PROFILING | Enables runtime profiling of data transfer between the host and connected devices. Set to 1 to enable. Requires DEPTHAI_LEVEL=debug or lower to print. |
 
 ## Running tests
 
@@ -333,15 +226,13 @@ Then navigate to `build` folder and run `ctest` with specified labels that denot
 Currently available labels:
  - usb
  - poe
- - rvc2
- - rvc4
 
 ```
 cd build
-# Run tests on RVC2 devices
-ctest -L rvc2
-# Run tests on RVC4 devices
-ctest -L rvc4
+# Run tests on USB devices
+ctest -L usb
+# Run tests on PoE devices
+ctest -L poe
 ```
 
 ## Style check
@@ -349,13 +240,9 @@ ctest -L rvc4
 The library uses clang format to enforce a certain coding style.
 If a style check is failing, run the `clangformat` target, check the output and push changes.
 
-To use this target clang format must be installed, preferably clang-format-18
+To use this target clang format must be installed, preferably clang-format-10
 ```
-sudo apt install clang-format-18
-```
-or using pip
-```
-python -m pip install clang-format==18.1.0
+sudo apt install clang-format-10
 ```
 
 And to apply formatting
@@ -367,7 +254,7 @@ cmake --build build --target clangformat
 
 Doxygen is used to generate documentation. Follow [doxygen download](https://www.doxygen.nl/download.html#srcbin) and install the required binaries for your platform.
 
-After that specify CMake define `-D'DEPTHAI_BUILD_DOCS=ON'` and build the target `doxygen`
+After that specify CMake define `-D'DEPTHAI_BUILD_DOCS=ON`' and build the target `doxygen`
 
 ## Debugging tips
 
@@ -375,12 +262,25 @@ Debugging can be done using **Visual Studio Code** and either **GDB** or **LLDB*
 LLDB in some cases was much faster to step with and resolved more `incomplete_type` variables than GDB. Your mileage may vary though.
 
 
+If there is a need to step into **Hunter** libraries, that can be achieved by removing previous built artifacts
+```
+rm -r ~/.hunter
+```
+
+And configuring the project with the following CMake option set to `ON`
+```
+cmake . -D'HUNTER_KEEP_PACKAGE_SOURCES=ON'
+```
+
+This retains the libraries source code, so that debugger can step through it (the paths are already set up correctly)
+
+
 ## Troubleshooting
 
 ### Build fails with missing OpenCV dependency
 
 If your build process happen to fail due to OpenCV library not being found, but you have the OpenCV installed, please
-run build with additional `-D'OpenCV_DIR=...` flag (replacing default Ubuntu path `/usr/lib/x86_64-linux-gnu/cmake/opencv4` with yours)
+run build with additional `-D'OpenCV_DIR=...`' flag (replacing default Ubuntu path `/usr/lib/x86_64-linux-gnu/cmake/opencv4` with yours)
 
 ```
 cmake -S. -Bbuild -D'OpenCV_DIR=/usr/lib/x86_64-linux-gnu/cmake/opencv4'
@@ -388,15 +288,25 @@ cmake -S. -Bbuild -D'OpenCV_DIR=/usr/lib/x86_64-linux-gnu/cmake/opencv4'
 
 Now the build process should correctly discover your OpenCV installation
 
-### Build fails due to out of memory killer
-If your build process is killed by the out of memory killer, you can try to reduce the number of parallel jobs used during the build process.
+### Hunter
+Hunter is a CMake-only dependency manager for C/C++ projects.
 
-The error usually looks something like this:
+If you are stuck with error message which mentions external libraries (subdirectory of `.hunter`) like the following:
 ```
-c++: fatal error: Killed signal terminated program cc1plus
+/usr/bin/ld: /home/[user]/.hunter/_Base/062a19a/ccfed35/a84a713/Install/lib/liblzma.a(stream_flags_decoder.c.o): warning: relocation against `lzma_footer_magic' in read-only section `.text'
 ```
 
-You can do this by passing the `--parallel` flag with a lower number of jobs to the `cmake --build` command, for example:
+Try erasing the **Hunter** cache folder.
+
+Linux/MacOS:
 ```
-cmake --build build --parallel 2
+rm -r ~/.hunter
+```
+Windows:
+```
+del C:/.hunter
+```
+or
+```
+del C:/[user]/.hunter
 ```

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <depthai/pipeline/DeviceNode.hpp>
+#include <depthai/pipeline/Node.hpp>
 
 // shared
-#include <depthai/properties/SPIInProperties.hpp>
+#include <depthai-shared/properties/SPIInProperties.hpp>
 
 namespace dai {
 namespace node {
@@ -11,15 +11,18 @@ namespace node {
 /**
  * @brief SPIIn node. Receives messages over SPI.
  */
-class SPIIn : public DeviceNodeCRTP<DeviceNode, SPIIn, SPIInProperties> {
+class SPIIn : public NodeCRTP<Node, SPIIn, SPIInProperties> {
    public:
     constexpr static const char* NAME = "SPIIn";
-    using DeviceNodeCRTP::DeviceNodeCRTP;
+
+    SPIIn(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId);
+    SPIIn(const std::shared_ptr<PipelineImpl>& par, int64_t nodeId, std::unique_ptr<Properties> props);
 
     /**
      * Outputs message of same type as send from host.
      */
-    Output out{*this, {"out", DEFAULT_GROUP, {{{DatatypeEnum::Buffer, true}}}}};
+    Output out{*this, "out", Output::Type::MSender, {{DatatypeEnum::Buffer, true}}};
+
     /**
      * Specifies stream name over which the node will receive data
      *
@@ -53,8 +56,6 @@ class SPIIn : public DeviceNodeCRTP<DeviceNode, SPIIn, SPIInProperties> {
     std::uint32_t getMaxDataSize() const;
     /// Get number of frames in pool
     std::uint32_t getNumFrames() const;
-
-    void buildInternal() override;
 };
 
 }  // namespace node
