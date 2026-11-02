@@ -126,8 +126,8 @@ tracks:
     - git-bloom-generate -y rosdynrpm --prefix release/:{ros_distro} :{ros_distro}
       -i :{release_inc} --require-os fedora rhel
     devel_branch: ros-release
-    last_release: '"ros-v2.31.1"'
-    last_version: 2.31.1
+    last_release: '"ros-v2.33.0"'
+    last_version: 2.33.0
     name: depthai
     patches: null
     release_inc: '1'
