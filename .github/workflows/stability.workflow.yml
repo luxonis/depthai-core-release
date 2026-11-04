@@ -2,53 +2,97 @@ name: DepthAI Core HIL Stability
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - develop
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
-      - develop
+    inputs:
+      distinct_id:
+        description: 'run identifier'
+        required: false
+      testbed:
+          description: 'On what testbed will tests be run'
+          required: false
+          type: string
+      reservation_name:
+          description: 'Reservation name - usually usually unique identifier of root CI run'
+          required: false
+          type: string
+      luxonis_os:
+          description: 'Which RVC4 os version to install before starting tests'
+          required: false
+          type: string
+      depthai:
+        required: false
+        type: string
+        default: "latest"
+        description: "Version for depthai"
+      protocol:
+        required: false
+        type: choice
+        default: "tcpip"
+        options:
+          - tcpip
+          - usb
+        description: "Connect to the device over PoE (tcpip) or USB"
+      timeout:
+        required: false
+        type: string
+        description: "Stop the stability test after this many hours; unlimited when omitted"
+      wheel_run_id:
+        required: false
+        type: string
+        description: "Workflow run containing the Python wheel artifact"
 
-# Only allow latest run on same branch to be tested
-concurrency:
-  group: ci-stability-${{ github.ref }}-1
-  cancel-in-progress: true
+permissions:
+  actions: read
+  contents: read
 
 jobs:
-
+  id:
+    name: Workflow ID Provider
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: echo distinct ID ${{ github.event.inputs.distinct_id }}
+        run: echo ${{ github.event.inputs.distinct_id }}
   # Testing
-  test:
-    runs-on: ['self-hosted', 'hil-stability', 'linux']
+  stability_test:
+    runs-on: ['self-hosted', 'testbed-runner']
     timeout-minutes: 1450 # 24h & 10minutes
     steps:
-    - name: Cache .hunter folder
-      uses: actions/cache@v4
+
+    - uses: actions/checkout@v7
+
+    - name: Download Python wheel
+      if: github.event.inputs.wheel_run_id != ''
+      uses: actions/download-artifact@v8
       with:
-        path: $HOME/.hun_vanilla
-        key: hunter-linux-stability-vanilla
-    - uses: actions/checkout@v4
-      with:
-        submodules: 'recursive'
+        name: audited-wheels-combined-linux-x86_64
+        path: stability-wheels
+        github-token: ${{ github.token }}
+        run-id: ${{ github.event.inputs.wheel_run_id }}
 
-    # TODO also modify above hunter key to 'asan'
-    # - name: Specify ASAN toolchain path
-    #   run: echo "CMAKE_TOOLCHAIN_PATH=$PWD/cmake/toolchain/asan.cmake" >> $GITHUB_ENV
-
-    # - name: Configure, Build and Test
-    #   run: |
-    #     cmake -S . -B build -D CMAKE_BUILD_TYPE=Release -D HUNTER_ROOT=$HOME/.hun_vanilla -D DEPTHAI_BUILD_TESTS=ON
-    #     cmake --build build --parallel 8 --config Release --target stability_stress_test
-    #     cd build
-    #     ../ci/stability_stress_test_combined.sh
-
-    # Release build
-    - name: Configure, Build and Test
+    - name: Test
+      env:
+        INPUT_DEPTHAI_VERSION: ${{ github.event.inputs.depthai }}
+        INPUT_PROTOCOL: ${{ github.event.inputs.protocol }}
+        INPUT_TIMEOUT: ${{ github.event.inputs.timeout }}
       run: |
-        cmake -S . -B build -D CMAKE_BUILD_TYPE=Release -D HUNTER_ROOT=$HOME/.hun_vanilla -D DEPTHAI_BUILD_TESTS=ON
-        cmake --build build --parallel 8 --config Release --target stability_stress_test
-        cd build
-        ../ci/stability_stress_test_combined.sh 86400
+          if [[ -n "$INPUT_TIMEOUT" ]] && ! python3 -c 'import math, sys; value = float(sys.argv[1]); raise SystemExit(0 if math.isfinite(value) and value > 0 else 1)' "$INPUT_TIMEOUT" 2>/dev/null; then
+            echo "::error::timeout must be a positive finite number"
+            exit 1
+          fi
+
+          source scripts/hil/prepare_hil_framework.sh ${{ secrets.HIL_PAT_TOKEN }}
+          if [[ -n "${{ github.event.inputs.testbed }}" ]]; then
+            TESTBED_OPTION="--testbed ${{ github.event.inputs.testbed }}"
+          fi
+          if [[ -n "${{ github.event.inputs.reservation_name }}" ]]; then
+            RESERVATION_OPTION="--reservation-name ${{ github.event.inputs.reservation_name }}"
+          else
+            export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#rvc4-depthai-stability-$INPUT_PROTOCOL"
+            RESERVATION_OPTION="--reservation-name $RESERVATION_NAME"
+          fi
+          if [[ -n  "${{ github.event.inputs.luxonis_os }}" ]]; then
+            UPDATE_LUXONIS_OS="--rvc4-os-version ${{ github.event.inputs.luxonis_os }}"
+          fi
+
+          printf -v STABILITY_COMMAND 'scripts/hil/run_hil_stability.sh %q %q %q %q' "$INPUT_DEPTHAI_VERSION" "$INPUT_PROTOCOL" "$INPUT_TIMEOUT" stability-wheels
+          exec hil $HOLD_RESERVATION --models "oak4_pro or oak4_d" $TESTBED_OPTION $RESERVATION_OPTION $UPDATE_LUXONIS_OS --wait --sync-workspace --stability-test --stability-name "depthai-stability-$INPUT_PROTOCOL" --commands 'cd /tmp/depthai-core || exit' "$STABILITY_COMMAND"

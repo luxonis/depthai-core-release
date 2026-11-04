@@ -1,0 +1,589 @@
+#include "PipelineBindings.hpp"
+
+#include <pybind11/attr.h>
+#include <pybind11/gil.h>
+
+#include "DeviceBindings.hpp"
+#include "node/NodeBindings.hpp"
+
+// depthai
+#include "depthai/pipeline/Pipeline.hpp"
+#include "depthai/pipeline/ThreadedHostNode.hpp"
+
+// depthai - nodes
+#include "depthai/pipeline/node/AprilTag.hpp"
+#include "depthai/pipeline/node/BenchmarkIn.hpp"
+#include "depthai/pipeline/node/BenchmarkOut.hpp"
+#include "depthai/pipeline/node/Camera.hpp"
+#include "depthai/pipeline/node/ColorCamera.hpp"
+#include "depthai/pipeline/node/DetectionNetwork.hpp"
+#include "depthai/pipeline/node/DetectionParser.hpp"
+#include "depthai/pipeline/node/EdgeDetector.hpp"
+#include "depthai/pipeline/node/FeatureTracker.hpp"
+#include "depthai/pipeline/node/IMU.hpp"
+#include "depthai/pipeline/node/ImageManip.hpp"
+#include "depthai/pipeline/node/MonoCamera.hpp"
+#include "depthai/pipeline/node/NeuralDepth.hpp"
+#include "depthai/pipeline/node/NeuralNetwork.hpp"
+#include "depthai/pipeline/node/ObjectTracker.hpp"
+#include "depthai/pipeline/node/Rectification.hpp"
+#include "depthai/pipeline/node/SPIIn.hpp"
+#include "depthai/pipeline/node/SPIOut.hpp"
+#include "depthai/pipeline/node/Script.hpp"
+#include "depthai/pipeline/node/SpatialDetectionNetwork.hpp"
+#include "depthai/pipeline/node/SpatialLocationCalculator.hpp"
+#include "depthai/pipeline/node/StereoDepth.hpp"
+#include "depthai/pipeline/node/SystemLogger.hpp"
+#include "depthai/pipeline/node/UVC.hpp"
+#include "depthai/pipeline/node/VideoEncoder.hpp"
+#include "depthai/pipeline/node/Vpp.hpp"
+#include "depthai/pipeline/node/Warp.hpp"
+#include "depthai/pipeline/node/internal/XLinkIn.hpp"
+#include "depthai/pipeline/node/internal/XLinkOut.hpp"
+
+// depthai/
+#include <memory>
+
+#include "depthai/properties/GlobalProperties.hpp"
+#include "depthai/utility/RecordReplay.hpp"
+
+std::shared_ptr<dai::Node> createNode(dai::Pipeline& p, py::object class_, const std::shared_ptr<dai::Device>& device = nullptr) {
+    auto nodeCreateMap = NodeBindings::getNodeCreateMap();
+    for(auto& kv : nodeCreateMap) {
+        auto& node = kv.first;
+        auto& create = kv.second;
+        if(node.is(class_)) {
+            return create(p, class_, device);
+        }
+    }
+    return nullptr;
+}
+
+// Fully qualified Python name of a type object, e.g. "depthai.node.Camera", "depthai.DeviceInfo" or "str"
+static std::string pyQualifiedTypeName(py::handle type) {
+    const auto attrAsString = [&](const char* name, const char* fallback) {
+        return static_cast<std::string>(py::str(py::getattr(type, name, py::str(fallback))));
+    };
+    const auto module = attrAsString("__module__", "");
+    const auto qualname = attrAsString("__qualname__", "?");
+    if(module.empty() || module == "builtins") return qualname;
+    return module + "." + qualname;
+}
+
+// Parses the arguments pipeline.create(NodeClass, ...) accepts for bound (C++) node classes: a single optional explicit device, either as
+// the positional argument after the node class or as the 'device' keyword argument. Only a depthai.Device instance (as returned by
+// pipeline.addDevice(...)) or None (no explicit device) is accepted. Anything else - a wrong type, extra positional arguments or unknown
+// keyword arguments - raises TypeError, so a mistake can never silently fall back to creating the node on the default device.
+static std::shared_ptr<dai::Device> parseBoundNodeCreateArgs(py::handle class_, const py::args& args, const py::kwargs& kwargs) {
+    const std::string context = "pipeline.create(" + pyQualifiedTypeName(class_) + ", ...)";
+    const std::string expected = "a depthai.Device (as returned by pipeline.addDevice(...), or a depthai.Device instance) or None";
+
+    if(args.size() > 1) {
+        throw py::type_error(context + " takes at most one positional argument after the node class (an optional depthai.Device), but "
+                             + std::to_string(args.size()) + " were given");
+    }
+    for(const auto& item : kwargs) {
+        const auto key = item.first.cast<std::string>();
+        if(key != "device") {
+            throw py::type_error(context + " got an unexpected keyword argument '" + key
+                                 + "'; the only keyword argument it accepts is 'device' (an optional depthai.Device)");
+        }
+    }
+    const bool hasPositional = args.size() == 1;
+    const bool hasKeyword = kwargs.contains("device");
+    if(hasPositional && hasKeyword) {
+        throw py::type_error(context + " got multiple values for argument 'device' (passed both positionally and as a keyword argument)");
+    }
+    if(!hasPositional && !hasKeyword) return nullptr;
+
+    const py::object deviceArg = hasPositional ? py::object(args[0]) : py::object(kwargs["device"]);
+    if(deviceArg.is_none()) return nullptr;
+    if(py::isinstance<dai::Device>(deviceArg)) return deviceArg.cast<std::shared_ptr<dai::Device>>();
+
+    std::string message = context + ": the 'device' argument must be " + expected + ", but got '" + pyQualifiedTypeName(py::type::of(deviceArg)) + "'.";
+    if(py::isinstance<dai::DeviceInfo>(deviceArg)) {
+        message +=
+            " A depthai.DeviceInfo only identifies a device: connect it first with 'device = pipeline.addDevice(deviceInfo)' and pass the returned"
+            " depthai.Device instead.";
+    } else if(py::isinstance<py::str>(deviceArg)) {
+        message +=
+            " A string only identifies a device (by id, IP or name): connect it first with 'device = pipeline.addDevice(\"...\")' and pass the returned"
+            " depthai.Device instead.";
+    }
+    throw py::type_error(message);
+}
+
+void PipelineBindings::bind(pybind11::module& m, void* pCallstack) {
+    using namespace dai;
+
+    // Type definitions
+    py::class_<GlobalProperties> globalProperties(m, "GlobalProperties", DOC(dai, GlobalProperties));
+    py::class_<DeviceProperties> deviceProperties(m, "DeviceProperties", DOC(dai, DeviceProperties));
+    py::class_<RecordConfig> recordConfig(m, "RecordConfig", DOC(dai, RecordConfig));
+    py::enum_<RecordConfig::RecordReplayState> recordState(recordConfig, "RecordReplayState", DOC(dai, RecordConfig, RecordReplayState));
+    py::enum_<RecordConfig::CompressionLevel> recordCompression(recordConfig, "CompressionLevel", DOC(dai, RecordConfig, CompressionLevel));
+    py::class_<RecordConfig::VideoEncoding> recordVideoConfig(recordConfig, "VideoEncoding", DOC(dai, RecordConfig, VideoEncoding));
+    py::class_<PipelineStateApi> pipelineStateApi(m, "PipelineStateApi", DOC(dai, PipelineStateApi));
+    py::enum_<DeviceState>(m, "DeviceState", DOC(dai, DeviceState))
+        .value("RUNNING", DeviceState::RUNNING)
+        .value("DISCONNECTED", DeviceState::DISCONNECTED)
+        .value("RECONNECTING", DeviceState::RECONNECTING)
+        .value("FAILED", DeviceState::FAILED);
+    py::class_<NodesStateApi> nodesStateApi(m, "NodesStateApi", DOC(dai, NodesStateApi));
+    py::class_<NodeStateApi> nodeStateApi(m, "NodeStateApi", DOC(dai, NodeStateApi));
+    py::class_<Pipeline> pipeline(m, "Pipeline", DOC(dai, Pipeline, 2));
+    py::enum_<Pipeline::AutoCalibrationMode> pipelineAutoCalibrationMode(pipeline, "AutoCalibrationMode");
+
+    ///////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////
+    // Call the rest of the type defines, then perform the actual bindings
+    Callstack* callstack = (Callstack*)pCallstack;
+    auto cb = callstack->top();
+    callstack->pop();
+    cb(m, pCallstack);
+    // Actual bindings
+    ///////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////
+
+    pipelineAutoCalibrationMode.value("OFF", Pipeline::AutoCalibrationMode::OFF)
+        .value("ON_START", Pipeline::AutoCalibrationMode::ON_START)
+        .value("CONTINUOUS", Pipeline::AutoCalibrationMode::CONTINUOUS);
+
+    // Bind global properties
+    globalProperties.def(py::init<>())
+        .def_readwrite("pipelineName", &GlobalProperties::pipelineName)
+        .def_readwrite("pipelineVersion", &GlobalProperties::pipelineVersion)
+        .def_readwrite("multiDeviceCalibration", &GlobalProperties::multiDeviceCalibration);
+
+    deviceProperties.def(py::init<>())
+        .def_readwrite("calibData", &dai::DeviceProperties::calibData, DOC(dai, DeviceProperties, calibData))
+        .def("setFrom", &DeviceProperties::setFrom, py::arg("other"), DOC(dai, DeviceProperties, setFrom))
+        .def_readwrite("eepromId", &dai::DeviceProperties::eepromId, DOC(dai, DeviceProperties, eepromId))
+        .def_readwrite("leonCssFrequencyHz", &DeviceProperties::leonCssFrequencyHz)
+        .def_readwrite("leonMssFrequencyHz", &DeviceProperties::leonMssFrequencyHz)
+        .def_readwrite("cameraTuningBlobSize", &DeviceProperties::cameraTuningBlobSize, DOC(dai, DeviceProperties, cameraTuningBlobSize))
+        .def_readwrite("cameraTuningBlobUri", &DeviceProperties::cameraTuningBlobUri, DOC(dai, DeviceProperties, cameraTuningBlobUri))
+        .def_readwrite("cameraSocketTuningBlobSize", &DeviceProperties::cameraSocketTuningBlobSize, DOC(dai, DeviceProperties, cameraSocketTuningBlobSize))
+        .def_readwrite("cameraSocketTuningBlobUri", &DeviceProperties::cameraSocketTuningBlobUri, DOC(dai, DeviceProperties, cameraSocketTuningBlobUri))
+        .def_readwrite("xlinkChunkSize", &DeviceProperties::xlinkChunkSize, DOC(dai, DeviceProperties, xlinkChunkSize))
+        .def_readwrite("sippBufferSize", &DeviceProperties::sippBufferSize, DOC(dai, DeviceProperties, sippBufferSize))
+        .def_readwrite("sippDmaBufferSize", &DeviceProperties::sippDmaBufferSize, DOC(dai, DeviceProperties, sippDmaBufferSize));
+
+    recordVideoConfig.def(py::init<>())
+        .def_readwrite("enabled", &RecordConfig::VideoEncoding::enabled, DOC(dai, RecordConfig, VideoEncoding, enabled))
+        .def_readwrite("bitrate", &RecordConfig::VideoEncoding::bitrate, DOC(dai, RecordConfig, VideoEncoding, bitrate))
+        .def_readwrite("profile", &RecordConfig::VideoEncoding::profile, DOC(dai, RecordConfig, VideoEncoding, profile))
+        .def_readwrite("lossless", &RecordConfig::VideoEncoding::lossless, DOC(dai, RecordConfig, VideoEncoding, lossless))
+        .def_readwrite("quality", &RecordConfig::VideoEncoding::quality, DOC(dai, RecordConfig, VideoEncoding, quality));
+
+    recordState.value("NONE", RecordConfig::RecordReplayState::NONE)
+        .value("RECORD", RecordConfig::RecordReplayState::RECORD)
+        .value("REPLAY", RecordConfig::RecordReplayState::REPLAY);
+    recordCompression.value("NONE", RecordConfig::CompressionLevel::NONE)
+        .value("FASTEST", RecordConfig::CompressionLevel::FASTEST)
+        .value("FAST", RecordConfig::CompressionLevel::FAST)
+        .value("DEFAULT", RecordConfig::CompressionLevel::DEFAULT)
+        .value("SLOW", RecordConfig::CompressionLevel::SLOW)
+        .value("SLOWEST", RecordConfig::CompressionLevel::SLOWEST);
+
+    recordConfig.def(py::init<>())
+        .def_readwrite("state", &RecordConfig::state, DOC(dai, RecordConfig, state))
+        .def_readwrite("outputDir", &RecordConfig::outputDir, DOC(dai, RecordConfig, outputDir))
+        .def_readwrite("videoEncoding", &RecordConfig::videoEncoding, DOC(dai, RecordConfig, videoEncoding))
+        .def_readwrite("compressionLevel", &RecordConfig::compressionLevel, DOC(dai, RecordConfig, compressionLevel))
+        .def_readwrite("syncCameraOutputs", &RecordConfig::syncCameraOutputs, DOC(dai, RecordConfig, syncCameraOutputs));
+
+    pipelineStateApi.def("nodes", static_cast<NodesStateApi (PipelineStateApi::*)()>(&PipelineStateApi::nodes), DOC(dai, PipelineStateApi, nodes))
+        .def("stateAsync",
+             &PipelineStateApi::stateAsync,
+             py::arg("callback"),
+             py::arg("config") = std::nullopt,
+             py::call_guard<py::gil_scoped_release>(),
+             DOC(dai, PipelineStateApi, stateAsync))
+        .def("nodes",
+             static_cast<NodesStateApi (PipelineStateApi::*)(const std::vector<Node::Id>&)>(&PipelineStateApi::nodes),
+             py::arg("nodeIds"),
+             DOC(dai, PipelineStateApi, nodes, 2))
+        .def("nodes",
+             static_cast<NodeStateApi (PipelineStateApi::*)(Node::Id)>(&PipelineStateApi::nodes),
+             py::arg("nodeId"),
+             DOC(dai, PipelineStateApi, nodes, 3));
+
+    nodesStateApi.def("summary", &NodesStateApi::summary, DOC(dai, NodesStateApi, summary), py::call_guard<py::gil_scoped_release>())
+        .def("detailed", &NodesStateApi::detailed, DOC(dai, NodesStateApi, detailed), py::call_guard<py::gil_scoped_release>())
+        .def("outputs", &NodesStateApi::outputs, DOC(dai, NodesStateApi, outputs), py::call_guard<py::gil_scoped_release>())
+        .def("inputs", &NodesStateApi::inputs, DOC(dai, NodesStateApi, inputs), py::call_guard<py::gil_scoped_release>())
+        .def("otherTimings", &NodesStateApi::otherTimings, DOC(dai, NodesStateApi, otherTimings), py::call_guard<py::gil_scoped_release>());
+
+    nodeStateApi.def("summary", &NodeStateApi::summary, DOC(dai, NodeStateApi, summary), py::call_guard<py::gil_scoped_release>())
+        .def("events", &NodeStateApi::events, py::call_guard<py::gil_scoped_release>(), DOC(dai, NodeStateApi, events))
+        .def("detailed", &NodeStateApi::detailed, DOC(dai, NodeStateApi, detailed), py::call_guard<py::gil_scoped_release>())
+        .def("outputs",
+             static_cast<std::unordered_map<std::string, NodeState::OutputQueueState> (NodeStateApi::*)()>(&NodeStateApi::outputs),
+             DOC(dai, NodeStateApi, outputs),
+             py::call_guard<py::gil_scoped_release>())
+        .def("outputs",
+             static_cast<std::unordered_map<std::string, NodeState::OutputQueueState> (NodeStateApi::*)(const std::vector<std::string>&)>(
+                 &NodeStateApi::outputs),
+             py::arg("outputNames"),
+             DOC(dai, NodeStateApi, outputs, 2),
+             py::call_guard<py::gil_scoped_release>())
+        .def("outputs",
+             static_cast<NodeState::OutputQueueState (NodeStateApi::*)(const std::string&)>(&NodeStateApi::outputs),
+             py::arg("outputName"),
+             DOC(dai, NodeStateApi, outputs, 3),
+             py::call_guard<py::gil_scoped_release>())
+        .def("inputs",
+             static_cast<std::unordered_map<std::string, NodeState::InputQueueState> (NodeStateApi::*)()>(&NodeStateApi::inputs),
+             DOC(dai, NodeStateApi, inputs),
+             py::call_guard<py::gil_scoped_release>())
+        .def("inputs",
+             static_cast<std::unordered_map<std::string, NodeState::InputQueueState> (NodeStateApi::*)(const std::vector<std::string>&)>(&NodeStateApi::inputs),
+             py::arg("inputNames"),
+             DOC(dai, NodeStateApi, inputs, 2),
+             py::call_guard<py::gil_scoped_release>())
+        .def("inputs",
+             static_cast<NodeState::InputQueueState (NodeStateApi::*)(const std::string&)>(&NodeStateApi::inputs),
+             py::arg("inputName"),
+             DOC(dai, NodeStateApi, inputs, 3),
+             py::call_guard<py::gil_scoped_release>())
+        .def("otherTimings",
+             static_cast<std::unordered_map<std::string, NodeState::Timing> (NodeStateApi::*)()>(&NodeStateApi::otherTimings),
+             DOC(dai, NodeStateApi, otherTimings),
+             py::call_guard<py::gil_scoped_release>())
+        .def("otherTimings",
+             static_cast<std::unordered_map<std::string, NodeState::Timing> (NodeStateApi::*)(const std::vector<std::string>&)>(&NodeStateApi::otherTimings),
+             py::arg("timingNames"),
+             DOC(dai, NodeStateApi, otherTimings, 2),
+             py::call_guard<py::gil_scoped_release>())
+        .def("otherTimings",
+             static_cast<NodeState::Timing (NodeStateApi::*)(const std::string&)>(&NodeStateApi::otherTimings),
+             py::arg("timingName"),
+             DOC(dai, NodeStateApi, otherTimings),
+             py::call_guard<py::gil_scoped_release>());
+
+    // bind pipeline
+    pipeline
+        .def(py::init([](bool createImplicitDevice) {
+                 // If createImplicitDevice is true, use deviceSearchHelper to find a device
+                 // as it periodically checks for python interrupts
+                 if(createImplicitDevice) {
+                     dai::DeviceInfo deviceInfo = deviceSearchHelper<dai::Device>();
+                     auto device = std::make_shared<dai::Device>(deviceInfo);
+                     return new Pipeline(device);
+                 }
+
+                 assert(createImplicitDevice == false);
+                 return new Pipeline(createImplicitDevice);
+             }),
+             py::arg("createImplicitDevice") = true,
+             DOC(dai, Pipeline, Pipeline))
+        .def(py::init<std::shared_ptr<Device>>(), py::arg("defaultDevice"), DOC(dai, Pipeline, Pipeline))
+        .def("getSourceNodes", &dai::Pipeline::getSourceNodes, DOC(dai, Pipeline, getSourceNodes))
+        .def("getConnections", &dai::Pipeline::getConnections, DOC(dai, Pipeline, getConnections))
+        .def("setGlobalProperties", &dai::Pipeline::setGlobalProperties, py::arg("globalProperties"), DOC(dai, Pipeline, setGlobalProperties))
+        .def("setOpenVINOVersion", &dai::Pipeline::setOpenVINOVersion, py::arg("version"), DOC(dai, Pipeline, setOpenVINOVersion))
+        .def("isHolisticRecordEnabled", &dai::Pipeline::isHolisticRecordEnabled, DOC(dai, Pipeline, isHolisticRecordEnabled))
+        .def("isHolisticReplayEnabled", &dai::Pipeline::isHolisticReplayEnabled, DOC(dai, Pipeline, isHolisticReplayEnabled))
+        .def("isPipelineDebuggingEnabled", &dai::Pipeline::isPipelineDebuggingEnabled, DOC(dai, Pipeline, isPipelineDebuggingEnabled))
+        .def("getPipelineStateOut", &dai::Pipeline::getPipelineStateOut, DOC(dai, Pipeline, getPipelineStateOut))
+        .def("getPipelineStateRequest", &dai::Pipeline::getPipelineStateRequest, DOC(dai, Pipeline, getPipelineStateRequest))
+        // Python only methods
+        .def("__enter__",
+             [](Pipeline& p) -> Pipeline& {
+                 setImplicitPipeline(&p);
+                 return p;
+             })
+        .def("__exit__",
+             [](Pipeline& d, py::object type, py::object value, py::object traceback) {
+                 py::gil_scoped_release release;
+                 delImplicitPipeline();
+                 d.stop();
+                 d.wait();
+             })
+        //.def(py::init<const Pipeline&>())
+        .def("getGlobalProperties", &Pipeline::getGlobalProperties, DOC(dai, Pipeline, getGlobalProperties))
+        .def(
+            "setMultiDeviceCalibration",
+            [](Pipeline& p, std::vector<MultiDeviceExtrinsics> graph) {
+                py::gil_scoped_release release;
+                p.setMultiDeviceCalibration(std::move(graph));
+            },
+            py::arg("graph"),
+            DOC(dai, Pipeline, setMultiDeviceCalibration))
+        .def("getMultiDeviceCalibration", &Pipeline::getMultiDeviceCalibration, DOC(dai, Pipeline, getMultiDeviceCalibration))
+        .def(
+            "clearMultiDeviceCalibration",
+            [](Pipeline& p) {
+                py::gil_scoped_release release;
+                p.clearMultiDeviceCalibration();
+            },
+            DOC(dai, Pipeline, clearMultiDeviceCalibration))
+        .def("setDefaultDeviceProperties",
+             &Pipeline::setDefaultDeviceProperties,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("deviceProperties"),
+             DOC(dai, Pipeline, setDefaultDeviceProperties))
+        .def("getDefaultDeviceProperties",
+             &Pipeline::getDefaultDeviceProperties,
+             py::call_guard<py::gil_scoped_release>(),
+             DOC(dai, Pipeline, getDefaultDeviceProperties))
+        //.def("create", &Pipeline::create<node::XLinkIn>)
+        .def("remove", &Pipeline::remove, py::arg("node"), DOC(dai, Pipeline, remove))
+        .def("getAllNodes", static_cast<std::vector<std::shared_ptr<Node>> (Pipeline::*)() const>(&Pipeline::getAllNodes), DOC(dai, Pipeline, getAllNodes))
+        // .def("getAllNodes", static_cast<std::vector<std::shared_ptr< Node>> (Pipeline::*)()>(&Pipeline::getAllNodes),
+        // py::return_value_policy::reference_internal, DOC(dai, Pipeline, getAllNodes))
+        .def("getNode", static_cast<std::shared_ptr<Node> (Pipeline::*)(Node::Id)>(&Pipeline::getNode), DOC(dai, Pipeline, getNode))
+        // .def("getNode", static_cast<std::shared_ptr<Node> (Pipeline::*)(Node::Id) const>(&Pipeline::getNode), DOC(dai, Pipeline, getNode))
+        // .def("getNode", static_cast<std::shared_ptr<Node> (Pipeline::*)(Node::Id)>(&Pipeline::getNode), py::return_value_policy::reference_internal, DOC(dai,
+        // Pipeline, getNode)) .def("getConnections", &Pipeline::getConnections, DOC(dai, Pipeline, getConnections), DOC(dai, Pipeline, getConnections))
+        // .def("getConnectionMap", &Pipeline::getConnectionMap, DOC(dai, Pipeline, getConnectionMap), py::return_value_policy::reference_internal, DOC(dai,
+        // Pipeline, getConnectionMap)) .def("getNodeMap", &Pipeline::getNodeMap, DOC(dai, Pipeline, getNodeMap), py::return_value_policy::reference_internal,
+        // DOC(dai, Pipeline, getNodeMap)) .def("link", &Pipeline::link, DOC(dai, Pipeline, link), DOC(dai, Pipeline, link)) .def("unlink", &Pipeline::unlink,
+        // DOC(dai, Pipeline, unlink), DOC(dai, Pipeline, unlink))
+        .def("getAssetManager",
+             static_cast<const AssetManager& (Pipeline::*)() const>(&Pipeline::getAssetManager),
+             py::return_value_policy::reference_internal,
+             DOC(dai, Pipeline, getAssetManager))
+        .def("getAssetManager",
+             static_cast<AssetManager& (Pipeline::*)()>(&Pipeline::getAssetManager),
+             py::return_value_policy::reference_internal,
+             DOC(dai, Pipeline, getAssetManager))
+        .def("setCameraTuningBlobPath",
+             py::overload_cast<const fs::path&>(&Pipeline::setCameraTuningBlobPath),
+             py::arg("path"),
+             DOC(dai, Pipeline, setCameraTuningBlobPath))
+        .def("setCameraTuningBlobPath",
+             py::overload_cast<CameraBoardSocket, const fs::path&>(&Pipeline::setCameraTuningBlobPath),
+             py::arg("socket"),
+             py::arg("path"),
+             DOC(dai, Pipeline, setCameraTuningBlobPath, 2))
+        .def("setCameraTuningBlobPath",
+             py::overload_cast<const std::shared_ptr<Device>&, const fs::path&>(&Pipeline::setCameraTuningBlobPath),
+             py::arg("device"),
+             py::arg("path"),
+             DOC(dai, Pipeline, setCameraTuningBlobPath, 3))
+        .def("setCameraTuningBlobPath",
+             py::overload_cast<const std::shared_ptr<Device>&, CameraBoardSocket, const fs::path&>(&Pipeline::setCameraTuningBlobPath),
+             py::arg("device"),
+             py::arg("socket"),
+             py::arg("path"),
+             DOC(dai, Pipeline, setCameraTuningBlobPath, 4))
+        .def("setXLinkChunkSize", py::overload_cast<int>(&Pipeline::setXLinkChunkSize), py::arg("sizeBytes"), DOC(dai, Pipeline, setXLinkChunkSize))
+        .def("setXLinkChunkSize",
+             py::overload_cast<const std::shared_ptr<Device>&, int>(&Pipeline::setXLinkChunkSize),
+             py::arg("device"),
+             py::arg("sizeBytes"),
+             DOC(dai, Pipeline, setXLinkChunkSize, 2))
+        .def("setSippBufferSize", py::overload_cast<int>(&Pipeline::setSippBufferSize), py::arg("sizeBytes"), DOC(dai, Pipeline, setSippBufferSize))
+        .def("setSippBufferSize",
+             py::overload_cast<const std::shared_ptr<Device>&, int>(&Pipeline::setSippBufferSize),
+             py::arg("device"),
+             py::arg("sizeBytes"),
+             DOC(dai, Pipeline, setSippBufferSize, 2))
+        .def("setSippDmaBufferSize", py::overload_cast<int>(&Pipeline::setSippDmaBufferSize), py::arg("sizeBytes"), DOC(dai, Pipeline, setSippDmaBufferSize))
+        .def("setSippDmaBufferSize",
+             py::overload_cast<const std::shared_ptr<Device>&, int>(&Pipeline::setSippDmaBufferSize),
+             py::arg("device"),
+             py::arg("sizeBytes"),
+             DOC(dai, Pipeline, setSippDmaBufferSize, 2))
+        .def("setCalibrationData",
+             py::overload_cast<CalibrationHandler>(&Pipeline::setCalibrationData),
+             py::arg("calibrationDataHandler"),
+             DOC(dai, Pipeline, setCalibrationData))
+        .def("setCalibrationData",
+             py::overload_cast<const std::shared_ptr<Device>&, const CalibrationHandler&>(&Pipeline::setCalibrationData),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             py::arg("calibrationDataHandler"),
+             DOC(dai, Pipeline, setCalibrationData, 2))
+        .def("getCalibrationData", py::overload_cast<>(&Pipeline::getCalibrationData, py::const_), DOC(dai, Pipeline, getCalibrationData))
+        .def("getCalibrationData",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::getCalibrationData, py::const_),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             DOC(dai, Pipeline, getCalibrationData, 2))
+        .def("isCalibrationDataAvailable",
+             py::overload_cast<>(&Pipeline::isCalibrationDataAvailable, py::const_),
+             DOC(dai, Pipeline, isCalibrationDataAvailable))
+        .def("isCalibrationDataAvailable",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::isCalibrationDataAvailable, py::const_),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             DOC(dai, Pipeline, isCalibrationDataAvailable, 2))
+        .def("setEepromData", py::overload_cast<std::optional<EepromData>>(&Pipeline::setEepromData), py::arg("eepromData"), DOC(dai, Pipeline, setEepromData))
+        .def("setEepromData",
+             py::overload_cast<const std::shared_ptr<Device>&, const std::optional<EepromData>&>(&Pipeline::setEepromData),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             py::arg("eepromData"),
+             DOC(dai, Pipeline, setEepromData, 2))
+        .def("getEepromData", py::overload_cast<>(&Pipeline::getEepromData, py::const_), DOC(dai, Pipeline, getEepromData))
+        .def("getEepromData",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::getEepromData, py::const_),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             DOC(dai, Pipeline, getEepromData, 2))
+        .def("getEepromId", py::overload_cast<>(&Pipeline::getEepromId, py::const_), DOC(dai, Pipeline, getEepromId))
+        .def("getEepromId",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::getEepromId, py::const_),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             DOC(dai, Pipeline, getEepromId, 2))
+        .def("setDeviceProperties",
+             &Pipeline::setDeviceProperties,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             py::arg("deviceProperties"),
+             DOC(dai, Pipeline, setDeviceProperties))
+        .def("getDeviceProperties",
+             &Pipeline::getDeviceProperties,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("device"),
+             DOC(dai, Pipeline, getDeviceProperties))
+        .def("getDeviceConfig", py::overload_cast<>(&Pipeline::getDeviceConfig, py::const_), DOC(dai, Pipeline, getDeviceConfig))
+        .def("getDeviceConfig",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::getDeviceConfig, py::const_),
+             py::arg("device"),
+             DOC(dai, Pipeline, getDeviceConfig, 2))
+        .def("serializeToJson", &Pipeline::serializeToJson, py::arg("includeAssets") = true, DOC(dai, Pipeline, serializeToJson))
+        .def("setBoardConfig", py::overload_cast<BoardConfig>(&Pipeline::setBoardConfig), DOC(dai, Pipeline, setBoardConfig))
+        .def("setBoardConfig",
+             py::overload_cast<const std::shared_ptr<Device>&, const BoardConfig&>(&Pipeline::setBoardConfig),
+             py::arg("device"),
+             py::arg("board"),
+             DOC(dai, Pipeline, setBoardConfig, 2))
+        .def("getBoardConfig", py::overload_cast<>(&Pipeline::getBoardConfig, py::const_), DOC(dai, Pipeline, getBoardConfig))
+        .def("getBoardConfig",
+             py::overload_cast<const std::shared_ptr<Device>&>(&Pipeline::getBoardConfig, py::const_),
+             py::arg("device"),
+             DOC(dai, Pipeline, getBoardConfig, 2))
+        .def("setAutoCalibrationMode", &Pipeline::setAutoCalibrationMode, py::arg("mode"))
+        .def("getAutoCalibrationMode", &Pipeline::getAutoCalibrationMode)
+        .def("getDefaultDevice", static_cast<std::shared_ptr<Device> (Pipeline::*)()>(&Pipeline::getDefaultDevice), DOC(dai, Pipeline, getDefaultDevice))
+        .def("addDevice", py::overload_cast<std::shared_ptr<Device>>(&Pipeline::addDevice), py::arg("device"), DOC(dai, Pipeline, addDevice))
+        .def("addDevice",
+             py::overload_cast<const DeviceInfo&>(&Pipeline::addDevice),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("deviceInfo"),
+             DOC(dai, Pipeline, addDevice, 2))
+        .def("addDevice",
+             py::overload_cast<const std::string&>(&Pipeline::addDevice),
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("idOrIpOrName"),
+             DOC(dai, Pipeline, addDevice, 3))
+        .def("getDevices", &Pipeline::getDevices, DOC(dai, Pipeline, getDevices))
+        .def("getDeviceState", &Pipeline::getDeviceState, py::arg("device"), DOC(dai, Pipeline, getDeviceState))
+        .def("setDeviceStateCallback", &Pipeline::setDeviceStateCallback, py::arg("callback"), DOC(dai, Pipeline, setDeviceStateCallback))
+        .def("setStopOnDeviceLoss", &Pipeline::setStopOnDeviceLoss, py::arg("stop"), DOC(dai, Pipeline, setStopOnDeviceLoss))
+        .def("getStopOnDeviceLoss", &Pipeline::getStopOnDeviceLoss, DOC(dai, Pipeline, getStopOnDeviceLoss))
+        // 'Template' create function
+        .def(
+            "add",
+            [](Pipeline& p, std::shared_ptr<Node> hostNode) {
+                p.add(hostNode);
+                return hostNode;
+            },
+            py::keep_alive<1, 2>())
+        // 'Template' create function
+        .def(
+            "create",
+            [](dai::Pipeline& p, py::object class_, const py::args& args, const py::kwargs& kwargs) {
+                // Check if class_ is a subclass of HostNode
+                py::object issubclass = py::module::import("builtins").attr("issubclass");
+                py::object nodeClass = py::module::import("depthai").attr("node").attr("ThreadedHostNode");
+                auto isSubclass = issubclass(class_, nodeClass).cast<bool>();
+
+                // Check if the class is directly from stable or beta bindings. If so, the node comes from bindings,
+                // so we create in the same manner as device nodes.
+                const auto nodeModule = class_.attr("__module__").cast<std::string>();
+                auto isFromBindings = nodeModule == "depthai.node" || nodeModule == "depthai.beta.node";
+                // Create a copy from kwargs and add autoAddToPipeline to false
+
+                // Check if the node is a ColorCamera or a MonoCamera node and issue a deprecation warning
+                py::object colorCameraClass = py::module::import("depthai").attr("node").attr("ColorCamera");
+                py::object monoCameraClass = py::module::import("depthai").attr("node").attr("MonoCamera");
+                if(class_.is(colorCameraClass)) {
+                    PyErr_WarnEx(PyExc_DeprecationWarning, "ColorCamera node is deprecated. Use Camera node instead.", 1);
+                }
+
+                if(class_.is(monoCameraClass)) {
+                    PyErr_WarnEx(PyExc_DeprecationWarning, "MonoCamera node is deprecated. Use Camera node instead.", 1);
+                }
+                if(isSubclass && !isFromBindings) {
+                    setImplicitPipeline(&p);
+                    setCreatingNodeFromPipelineCreate();
+                    std::shared_ptr<Node> hostNode;
+                    try {
+                        auto nodeObject = class_(*args, **kwargs);
+                        nodeObject.attr("_setPythonNodeName")(class_.attr("__name__").cast<std::string>());
+                        hostNode = py::cast<std::shared_ptr<node::ThreadedHostNode>>(nodeObject);
+                    } catch(...) {
+                        delCreatingNodeFromPipelineCreate();
+                        delImplicitPipeline();
+                        throw;
+                    }
+                    delCreatingNodeFromPipelineCreate();
+                    delImplicitPipeline();
+                    // Node already adds itself to the pipeline in the constructor
+                    // To be sure - check if it is already added
+                    auto allNodes = p.getAllNodes();
+                    auto found = false;
+                    for(auto& n : allNodes) {
+                        if(n == hostNode) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if(!found) {
+                        throw std::invalid_argument("Internal error: Node wasn't added to the pipeline");
+                    }
+                    return hostNode;
+                }
+                // Bound (C++) node classes: the only argument accepted after the class is an optional explicit device (positional or
+                // 'device='), validated strictly so that a DeviceInfo, a string or any other mistake raises instead of being dropped
+                const auto explicitDevice = parseBoundNodeCreateArgs(class_, args, kwargs);
+                // Otherwise create the node with `pipeline.create()` method
+                auto node = createNode(p, class_, explicitDevice);
+                if(node == nullptr) {
+                    throw std::invalid_argument(std::string(py::str(class_)) + " is not a subclass of depthai.node");
+                }
+                return node;
+            },
+            py::keep_alive<1, 0>())
+        .def("start", &Pipeline::start)
+        .def("wait",
+             [](Pipeline& p) {
+                 py::gil_scoped_release release;
+                 p.wait();
+             })
+        .def("stop", &Pipeline::stop, py::call_guard<py::gil_scoped_release>(), DOC(dai, Pipeline, stop))
+        .def("run",
+             [](Pipeline& p) {
+                 {
+                     py::gil_scoped_release release;
+                     p.start();
+                 }
+                 constexpr double timeoutSeconds = 0.1;
+                 while(p.isRunning()) {
+                     {
+                         // Process tasks
+                         py::gil_scoped_release release;
+                         p.processTasks(false, timeoutSeconds);
+                     }
+                     if(PyErr_CheckSignals() != 0) throw py::error_already_set();
+                 }
+                 p.stop();
+             })
+        .def("build", &Pipeline::build)
+        .def("isBuilt", &Pipeline::isBuilt)
+        .def("isRunning", &Pipeline::isRunning)
+        .def("processTasks", &Pipeline::processTasks, py::arg("waitForTasks") = false, py::arg("timeoutSeconds") = -1.0)
+        .def("enableHolisticRecord", &Pipeline::enableHolisticRecord, py::arg("recordConfig"), DOC(dai, Pipeline, enableHolisticRecord))
+        .def("enableHolisticReplay", &Pipeline::enableHolisticReplay, py::arg("recordingPath"), DOC(dai, Pipeline, enableHolisticReplay))
+        .def("enablePipelineDebugging", &Pipeline::enablePipelineDebugging, py::arg("enable") = true, DOC(dai, Pipeline, enablePipelineDebugging))
+        .def("getPipelineState", &Pipeline::getPipelineState, DOC(dai, Pipeline, getPipelineState));
+    ;
+}

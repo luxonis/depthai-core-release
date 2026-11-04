@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+
+import argparse
+from datetime import timedelta
+
+import cv2
+import depthai as dai
+
+FPS = 30.0
+WINDOW_NAME = "CAM_B + CAM_C panorama"
+
+parser = argparse.ArgumentParser(description="Stitch CAM_B and CAM_C into a panorama from their calibration")
+parser.add_argument("--deviceIp", help="Device IP address (default: auto-discover)")
+args = parser.parse_args()
+
+device = dai.Device(dai.DeviceInfo(args.deviceIp)) if args.deviceIp else dai.Device()
+with dai.Pipeline(device) as pipeline:
+    outputs = []
+    for socket in (dai.CameraBoardSocket.CAM_B, dai.CameraBoardSocket.CAM_C):
+        camera = pipeline.create(dai.node.Camera).build(socket, sensorFps=FPS)
+        # Calibrated composition needs undistorted inputs
+        outputs.append(camera.requestOutput((640, 400), fps=FPS, enableUndistortion=True))
+
+    stitching = pipeline.create(dai.node.Stitching).build(outputs)
+    stitching.setMode(dai.node.Stitching.Mode.PANORAMA)
+    stitching.setCameraModel(dai.CameraModel.Perspective)
+    # Uncomment to trade seam quality for throughput.
+    # stitching.setSeamFinder(dai.node.Stitching.SeamFinder.NONE)
+    # Uncomment to register the images visually instead of using the calibration.
+    # stitching.setUseInputCalibration(False)
+    stitching.setMaxPanoramaSize(2000, 1000)
+    stitching.setSyncThreshold(timedelta(seconds=2.0 / FPS))
+    output = stitching.out.createOutputQueue()
+
+    pipeline.start()
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+    try:
+        while pipeline.isRunning():
+            message = output.tryGet()
+            if message is not None:
+                cv2.imshow(WINDOW_NAME, message.getCvFrame())
+            if cv2.waitKey(1) == ord("q"):
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cv2.destroyAllWindows()

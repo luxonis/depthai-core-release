@@ -2,25 +2,30 @@
 
 namespace dai {
 
-std::shared_ptr<RawBuffer> AprilTags::serialize() const {
-    return raw;
+AprilTags::~AprilTags() = default;
+
+void AprilTags::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
+    metadata = utility::serialize(*this);
+    datatype = DatatypeEnum::AprilTags;
+};
+
+AprilTags AprilTags::transformTo(const ImgTransformation& target) {
+    return TransformableCRTP<AprilTags>::transformTo(target);
 }
 
-AprilTags::AprilTags() : Buffer(std::make_shared<RawAprilTags>()), rawdata(*dynamic_cast<RawAprilTags*>(raw.get())), aprilTags(rawdata.aprilTags) {}
-AprilTags::AprilTags(std::shared_ptr<RawAprilTags> ptr)
-    : Buffer(std::move(ptr)), rawdata(*dynamic_cast<RawAprilTags*>(raw.get())), aprilTags(rawdata.aprilTags) {}
+void AprilTags::transformToInternal(const ImgTransformation& target) {
+    if(!this->transformation.has_value()) {
+        throw std::runtime_error("Source transformation is not set, cannot transform AprilTags.");
+    }
+    ImgTransformation source = *this->transformation;
 
-// setters
-AprilTags& AprilTags::setTimestamp(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> tp) {
-    // Set timestamp from timepoint
-    return static_cast<AprilTags&>(Buffer::setTimestamp(tp));
-}
-AprilTags& AprilTags::setTimestampDevice(std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration> tp) {
-    // Set timestamp from timepoint
-    return static_cast<AprilTags&>(Buffer::setTimestampDevice(tp));
-}
-AprilTags& AprilTags::setSequenceNum(int64_t sequenceNum) {
-    return static_cast<AprilTags&>(Buffer::setSequenceNum(sequenceNum));
+    for(auto& aprilTag : aprilTags) {
+        aprilTag.topLeft = source.remapPointTo(target, aprilTag.topLeft);
+        aprilTag.topRight = source.remapPointTo(target, aprilTag.topRight);
+        aprilTag.bottomRight = source.remapPointTo(target, aprilTag.bottomRight);
+        aprilTag.bottomLeft = source.remapPointTo(target, aprilTag.bottomLeft);
+    }
+    setTransformation(target);
 }
 
 }  // namespace dai

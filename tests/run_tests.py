@@ -1,0 +1,319 @@
+import os
+import subprocess
+import threading
+import argparse
+import re
+from functools import reduce
+import pathlib
+import atexit
+
+class ResultThread(threading.Thread):
+
+    def __init__(self, cmd, env, name):
+        threading.Thread.__init__(self)
+        self.cmd = cmd
+        self.env = env
+        self.name = name
+        self.result = None
+        self.stdout_lines = []
+        self.stderr_lines = []
+
+    def run(self):
+        process = subprocess.Popen(
+            self.cmd,
+            env=self.env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            # Test output can contain bytes that are not valid UTF-8 (e.g. Catch2 prints
+            # uint8_t image data as raw chars). A strict decode would kill this thread and
+            # abort the whole run, so escape such bytes instead.
+            errors="backslashreplace",
+        )
+
+        for output in process.stdout:
+            line = output.rstrip()
+            print(f"[{self.name}] {line}", flush=True)
+            self.stdout_lines.append(line)
+
+        process.wait()
+        self.result = process
+
+def enableUARTonAllDevices(enable):
+    from adbutils import adb
+    regs = ["0x0F11A000", "0x0F11B000"]
+
+    enableValue = "0x00000204"
+    disableValue = "0x00000200"
+
+    devs = adb.device_list()
+
+    if len(devs) == 0:
+        print("WARNING: No devices connected, skipping UART enable/disable")
+        return
+    
+    for dev in devs:
+        dev.root()
+
+        if enable:
+            val = enableValue
+            print(f"Enabling UART on {dev.serial}")
+        else:
+            val = disableValue
+            print(f"Disabling UART on {dev.serial}")
+        
+        for reg in regs:
+            dev.shell(f"devmem {reg} 32 {val}")
+
+# Function to run ctest with specific environment variables and labels
+def run_ctest(env_vars, labels, test_label="ci", timeout=1000, excluded_labels=None, blocking=True, name=""):
+    env = os.environ.copy()
+    env_vars["DEPTHAI_PIPELINE_DEBUGGING"] = "1"
+    
+    # Add LSAN suppressions if the file exists
+    lsan_supp_path = pathlib.Path(__file__).parent / "lsan.supp"
+    if lsan_supp_path.exists():
+        lsan_supp_path = lsan_supp_path.resolve()
+        if "LSAN_OPTIONS" in env:
+            env["LSAN_OPTIONS"] += f":suppressions={lsan_supp_path}"
+        else:
+            env["LSAN_OPTIONS"] = f"suppressions={lsan_supp_path}"
+            
+    env.update(env_vars)
+
+    cmd = [
+        "ctest",
+        "--no-tests=error",
+        "-VV",
+        "-L",
+        f"^({test_label})$",
+        "--timeout",
+        str(timeout),
+        "-C",
+        "Release",
+        "--test-output-size-failed",
+        "500000",
+        "--test-output-truncation",
+        "tail",
+    ]
+
+    if os.name == "nt":
+        cmd.extend(["-LE", "^nowindows$"])
+
+    if excluded_labels:
+        excluded_pattern = "|".join(f"^{label}$" for label in excluded_labels)
+        cmd.extend(["-LE", excluded_pattern])
+
+    for label in labels:
+        # Encapsulate label in ^label$ to match exactly
+        label = f"^{label}$"
+        cmd.extend(["-L", label])
+    thread = ResultThread(cmd, env, name)
+    thread.start()
+    if blocking:
+        thread.join()
+    return thread
+
+
+def compute_or_result(results):
+    if results:
+        return reduce(lambda x, y: x | y, results)
+    return 0
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    # Positional argument for the path to the test directory
+    default_path = pathlib.Path(__file__) / ".." / ".." / "build"
+    parser.add_argument(
+        "--test_dir",
+        type=str,
+        required=False,
+        help="Path to the test directory",
+        default=default_path,
+    )
+
+    parser.add_argument(
+        "--rvc4",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--fsync",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--ptp",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--rvc4rgb",
+        action="store_true",
+        required=False,
+    )
+    
+    parser.add_argument(
+        "--rvc4usb",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--rvc2",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--rvc2-protocol",
+        choices=["all", "usb", "tcpip"],
+        default="all",
+    )
+
+    parser.add_argument(
+        "--rvc4replay",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--rvc2replay",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
+        "--test-label",
+        default="ci",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1000,
+    )
+
+    args = parser.parse_args()
+    if args.rvc2_protocol != "all" and not (args.rvc2 or args.rvc2replay):
+        parser.error("--rvc2-protocol requires --rvc2 or --rvc2replay")
+    test_dir = args.test_dir
+    print("Going to run tests in directory:", test_dir)
+    # cd to the test directory
+    os.chdir(pathlib.Path(test_dir).resolve())
+    # Example test configurations
+    all_configs = [
+        {
+            "name": "Host",
+            "env": {},
+            "labels": ["onhost"],
+        },
+        {
+            "name": "RVC4",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc4"],
+        },
+        {
+            "name": "RVC4 - USB",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "usb"},
+            "labels": ["rvc4"],
+            "excluded_labels": ["nousb"],
+        },
+        {
+            "name": "RVC4 - Fsync",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc4fsync"],
+        },
+        {
+            "name": "RVC4 - PTP",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc4ptp"],
+        },
+        {
+            "name": "RVC4 - RGB",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc4rgb"],
+        },
+        {
+            "name": "RVC2 - USB",
+            "env": {"DEPTHAI_PLATFORM": "rvc2", "DEPTHAI_PROTOCOL": "usb"},
+            "labels": ["rvc2", "usb"],
+            "excluded_labels": ["nousb"],
+        },
+        {
+            "name": "RVC2 - POE",
+            "env": {"DEPTHAI_PLATFORM": "rvc2", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc2", "poe"],
+        },
+    ]
+
+    # List to keep track of results
+    resultThreads = []
+    replay_excluded_labels = ["noreplayci"]
+
+    # Filter configurations based on command-line arguments
+    if args.rvc4:
+        test_configs = [config for config in all_configs if "rvc4" in config.get("labels", []) and config.get("env", {}).get("DEPTHAI_PROTOCOL") == "tcpip"]
+    elif args.rvc4usb:
+        test_configs = [config for config in all_configs if "rvc4" in config.get("labels", []) and config.get("env", {}).get("DEPTHAI_PROTOCOL") == "usb"]
+    elif args.rvc2:
+        test_configs = [
+            config
+            for config in all_configs
+            if "rvc2" in config.get("labels", []) or (re.fullmatch(args.test_label, "ci") and "onhost" in config.get("labels", []))
+        ]
+    elif args.rvc4replay:
+        test_configs = [config for config in all_configs if "rvc4" in config.get("labels", []) and config.get("env", {}).get("DEPTHAI_PROTOCOL") == "tcpip"]
+    elif args.rvc2replay:
+        test_configs = [config for config in all_configs if "rvc2" in config.get("labels", []) or "onhost" in config.get("labels", [])]
+    elif args.rvc4rgb:
+        test_configs = [config for config in all_configs if "rvc4rgb" in config.get("labels", [])]
+    elif args.fsync:
+        enableUARTonAllDevices(False)
+        atexit.register(enableUARTonAllDevices, True)
+        test_configs = [config for config in all_configs if "rvc4fsync" in config.get("labels", [])]
+    elif args.ptp:
+        test_configs = [config for config in all_configs if "rvc4ptp" in config.get("labels", [])]
+    else:
+        parser.error("One test target argument is required.")
+
+    if args.rvc2_protocol != "all":
+        test_configs = [
+            config
+            for config in test_configs
+            if config["env"].get("DEPTHAI_PROTOCOL") == args.rvc2_protocol
+            or (args.rvc2_protocol == "usb" and "onhost" in config["labels"])
+        ]
+
+    for config in test_configs:
+        name = config["name"]
+        env_vars = config["env"]
+        labels = config.get("labels")
+        excluded_labels = config.get("excluded_labels", []) + (replay_excluded_labels if args.rvc4replay or args.rvc2replay else [])
+
+        print(f"Running tests for configuration: {name}, on platform: {env_vars['DEPTHAI_PLATFORM'] if 'DEPTHAI_PLATFORM' in env_vars else 'HOST'}, on protocol: {env_vars['DEPTHAI_PROTOCOL'] if 'DEPTHAI_PROTOCOL' in env_vars else 'HOST'}, with labels: {",".join(labels) if labels is not None else ""}")
+        resultThread = run_ctest(env_vars, labels, args.test_label, args.timeout, excluded_labels=excluded_labels, blocking=False, name=name)
+        resultThreads.append((name, resultThread))
+
+    # Process the results
+    any_failures = False
+    for name, resultThread in resultThreads:
+        resultThread.join()
+        result = resultThread.result
+        if result is None or result.returncode != 0:
+            print(f"Tests failed for configuration: {name}")
+            any_failures = True
+        else:
+            print(f"Tests passed for configuration: {name}")
+
+    if any_failures:
+        print("Some tests failed")
+        exit(1)
+    else:
+        print("All tests passed")
+        exit(0)
